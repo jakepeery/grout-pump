@@ -53,6 +53,24 @@ pio device monitor
 - **NEW:** Separate HTML/CSS/JavaScript files for easy customization
 - Configure cycle timeout and other settings via web interface
 
+## Hardware Configuration
+
+**Pin Assignments (Freenove ESP32-WROOM):**
+
+| Component | Pin Function | ESP32 Pin | Logic |
+|-----------|--------------|-----------|-------|
+| **Power Output 1** | SSR Control (Valve Extend) | GPIO 25 | Active HIGH |
+| **Power Output 2** | SSR Control (Valve Retract) | GPIO 26 | Active HIGH |
+| **Wireless Input A** | Manual Extend | GPIO 12 | Active LOW |
+| **Wireless Input B** | Manual Retract | GPIO 13 | Active LOW |
+| **Wireless Input C** | Start Auto Loop | GPIO 14 | Active LOW |
+| **Wireless Input D** | Stop Auto Loop | GPIO 15 | Active LOW |
+| **End-Stop 1** | Position "IN" Sensor | GPIO 32 | Active LOW |
+| **End-Stop 2** | Position "OUT" Sensor | GPIO 33 | Active LOW |
+| **Emergency Stop** | Safety Cutoff | GPIO 27 | Active High (NC Switch) |
+
+*Note: All Inputs (A-D, End-stops, Estop) use internal pull-up resistors. Connect switches between PIN and GND.*
+
 ## Filesystem Upload (for web files)
 To upload the web interface files to the ESP32:
 ```bash

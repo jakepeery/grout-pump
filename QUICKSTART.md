@@ -21,10 +21,25 @@
 ## Daily Operation
 
 ### Remote Control
-- **Button A** - Extend valve (manual)
-- **Button B** - Retract valve (manual)
-- **Button C** - Start automatic cycling
-- **Button D** - Stop automatic cycling
+- **Button A (GPIO 12)** - Extend valve (manual)
+- **Button B (GPIO 13)** - Retract valve (manual)
+- **Button C (GPIO 14)** - Start automatic cycling
+- **Button D (GPIO 15)** - Stop automatic cycling
+- **Emergency Stop (GPIO 27)** - Immediate system halt (Normally Closed)
+
+**Pin Configuration (Freenove ESP32-WROOM):**
+
+| Component | ESP32 Pin |
+|-----------|-----------|
+| **Power Output 1 (SSR1)** | GPIO 25 |
+| **Power Output 2 (SSR2)** | GPIO 26 |
+| **Wireless Input A** | GPIO 12 |
+| **Wireless Input B** | GPIO 13 |
+| **Wireless Input C** | GPIO 14 |
+| **Wireless Input D** | GPIO 15 |
+| **End-Stop IN** | GPIO 32 |
+| **End-Stop OUT** | GPIO 33 |
+| **Emergency Stop (NC)** | GPIO 27 |
 
 ### Web Interface (NEW v2.0)
 The web interface now features a modern, responsive design with:
@@ -84,6 +99,7 @@ pio run --target upload
 
 ### Automatic Shutdowns
 System automatically stops and returns to manual mode if:
+- **Emergency Stop (E-Stop) activated**
 - Both end-stops trigger simultaneously (sensor fault)
 - Cycle timeout exceeded (valve stuck or sensor fault)
 
