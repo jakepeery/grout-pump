@@ -3,11 +3,18 @@
 ## Overview
 This Arduino sketch for the **Freenove ESP32-WROOM development board** controls a hydraulic valve system with two Solid State Relays (SSRs). It supports both manual control and automatic cycling mode with end-stop detection.
 
+**NEW Features:**
+- 🌐 **Web Interface** - Configure settings via browser
+- 📡 **OTA Updates** - Upload firmware wirelessly
+- 💾 **WiFi Credential Storage** - Stored in ESP32 flash memory
+- ⏱️ **Safety Timeouts** - Configurable cycle timeout protection
+
 ## Hardware Requirements
 - **Freenove ESP32-WROOM-32 Development Board**
 - 2 SSRs (Solid State Relays) for controlling the hydraulic valve
 - Wireless remote control with 4 momentary buttons
 - 2 end-stop sensors (limit switches)
+- WiFi network (for web interface and OTA updates)
 
 ## Pin Configuration
 
@@ -76,13 +83,73 @@ Press **Button C** to enter automatic loop mode. The system will:
 
 Press **Button D** to exit automatic loop mode and return to manual control.
 
+## Web Interface
+
+### Initial Setup
+On first boot (or when WiFi is not configured):
+1. The device starts in **Access Point (AP) mode**
+2. SSID: `GroutPump-Setup`
+3. Password: `12345678`
+4. Connect to this network and navigate to: `http://192.168.4.1`
+5. Configure your WiFi credentials in the settings page
+6. Device will restart and connect to your WiFi network
+
+### Accessing the Web Interface
+Once connected to WiFi, access the device via:
+- **mDNS:** `http://groutpump.local` (recommended)
+- **IP Address:** Check serial output or your router's DHCP list
+
+### Web Interface Features
+- **Home Page** - View current status, mode, and output states
+- **Settings Page** - Configure:
+  - WiFi credentials (SSID and password)
+  - Cycle timeout (in milliseconds)
+  - Enable/disable timeout protection
+- **Status API** - JSON endpoint at `/status` for integration
+- **Real-time Monitoring** - Refresh page to see live status
+
+## OTA (Over-The-Air) Updates
+
+### Configuration
+- **Hostname:** `groutpump`
+- **Password:** `groutpump123` (change in code for security)
+
+### Using Arduino IDE
+1. Connect to the same WiFi network as the ESP32
+2. Tools → Port → Select "groutpump at [IP address]"
+3. Upload sketch normally
+
+### Using PlatformIO
+```bash
+# Upload via OTA
+pio run --target upload --upload-port groutpump.local
+```
+
+Or add to `platformio.ini`:
+```ini
+upload_protocol = espota
+upload_port = groutpump.local
+upload_flags = 
+    --auth=groutpump123
+```
+
 ## Safety Features
 - **Debouncing:** All inputs are debounced (50ms) to prevent false triggers
 - **Cycle Delay:** 500ms delay between direction changes to prevent rapid switching and ensure outputs are never active simultaneously
+- **Cycle Timeout:** Configurable timeout (default 30 seconds) stops system if end-stop not reached
 - **End-stop Detection:** Automatic reversal when end-stops are triggered
 - **Dual End-stop Protection:** If both end-stops trigger simultaneously (sensor malfunction), system immediately stops all outputs and returns to manual mode
 - **Sequential Output Control:** When switching directions, one output is turned OFF before the other is turned ON to prevent simultaneous activation
 - **Clean Shutdown:** All outputs turn OFF when exiting auto mode
+- **OTA Safety:** All outputs turn OFF during firmware updates
+
+## Configuration Storage
+All settings are stored in ESP32 flash memory using the Preferences library:
+- WiFi SSID and password
+- Cycle timeout value
+- Timeout enable/disable state
+
+Settings persist across power cycles and firmware updates.
 
 ## Customization
 

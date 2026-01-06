@@ -2,11 +2,15 @@
 ESP32 project to control oscillating a hydraulic valve using the **Freenove ESP32-WROOM development board**.
 
 ## Features
-- Manual control via wireless remote (4 momentary buttons)
-- Automatic cycling mode with end-stop detection
-- 2 SSR outputs for hydraulic valve control
-- Debounced inputs for reliable operation
-- Serial debugging output
+- 🎮 Manual control via wireless remote (4 momentary buttons)
+- 🔄 Automatic cycling mode with end-stop detection
+- ⚡ 2 SSR outputs for hydraulic valve control
+- 🔘 Debounced inputs for reliable operation
+- 🌐 **Web interface for configuration**
+- 📡 **OTA (Over-The-Air) firmware updates**
+- 💾 **WiFi credentials stored in flash**
+- ⏱️ **Configurable safety timeouts**
+- 📊 Serial debugging output
 - **PlatformIO compatible**
 - Optimized for Freenove ESP32-WROOM board
 
@@ -33,11 +37,34 @@ pio device monitor
 3. Click the PlatformIO icon in the sidebar
 4. Use "Build" and "Upload" buttons
 
+## Quick Start - Web Interface
+
+### First Time Setup
+1. Power on the ESP32 - it will start in AP mode
+2. Connect to WiFi network: `GroutPump-Setup` (password: `12345678`)
+3. Open browser and go to: `http://192.168.4.1`
+4. Navigate to Settings and configure your WiFi credentials
+5. Device will restart and connect to your WiFi
+
+### After WiFi Configuration
+- Access via mDNS: `http://groutpump.local`
+- Or use the IP address shown in serial monitor
+- Configure cycle timeout and other settings via web interface
+
+## OTA Updates
+After initial setup, you can update firmware wirelessly:
+```bash
+# Using PlatformIO
+pio run --target upload --upload-port groutpump.local
+```
+
+Or use Arduino IDE and select "groutpump at [IP]" from the Port menu.
+
 ## Project Structure
 ```
 grout-pump/
 ├── src/
-│   └── main.cpp          - Main ESP32 application
+│   └── main.cpp          - Main ESP32 application (with web server & OTA)
 ├── platformio.ini        - PlatformIO configuration
 ├── HARDWARE.md          - Detailed hardware documentation
 └── README.md            - This file
