@@ -197,9 +197,13 @@ void updateButtonState(ButtonState* btn, int pin) {
     if (reading != btn->currentState) {
       btn->currentState = reading;
       
-      // Detect button press (transition from HIGH to LOW for active-low)
+      // Detect button press event (transition from HIGH to LOW for active-low)
+      // This is edge-triggered - the flag is set on press and must be cleared by handler
       if (btn->currentState == LOW) {
         btn->pressed = true;
+      } else {
+        // Clear pressed flag when button is released
+        btn->pressed = false;
       }
     }
   }
