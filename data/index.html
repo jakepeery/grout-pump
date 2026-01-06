@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grout Pump Control</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🚰 Grout Pump Control</h1>
+        
+        <div class="status manual" id="status-box">
+            <h2>Current Status</h2>
+            <p><strong>Mode:</strong> <span id="mode">Loading...</span></p>
+            <div id="cycle-direction-container" style="display: none;">
+                <p><strong>Cycle Direction:</strong> <span id="cycle-direction">-</span></p>
+            </div>
+            <p id="gpo1">
+                <strong>GPO1 (SSR1):</strong> 
+                <span class="indicator off"></span>
+                <span class="status-text">Loading...</span>
+            </p>
+            <p id="gpo2">
+                <strong>GPO2 (SSR2):</strong> 
+                <span class="indicator off"></span>
+                <span class="status-text">Loading...</span>
+            </p>
+            <p><strong>End-Stop IN:</strong> <span id="endstop-in">Loading...</span></p>
+            <p><strong>End-Stop OUT:</strong> <span id="endstop-out">Loading...</span></p>
+        </div>
+        
+        <div class="info">
+            <h3>Network Information</h3>
+            <p id="wifi-status"><strong>WiFi:</strong> Loading...</p>
+            <p id="ip-address"><strong>IP Address:</strong> Loading...</p>
+            <p id="access-info"><strong>Access via:</strong> http://groutpump.local</p>
+        </div>
+        
+        <div class="nav-buttons">
+            <a href="/settings.html" class="btn">⚙️ Settings</a>
+            <a href="/status" class="btn">📊 Status JSON</a>
+            <button onclick="location.reload()" class="btn">🔄 Refresh</button>
+        </div>
+        
+        <p class="footer">Grout Pump Control v2.0 - ESP32 System</p>
+    </div>
+    
+    <script src="/script.js"></script>
+    <script>
+        // Initial status update
+        updateStatus();
+    </script>
+</body>
+</html>
