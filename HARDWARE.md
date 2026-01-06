@@ -78,8 +78,10 @@ Press **Button D** to exit automatic loop mode and return to manual control.
 
 ## Safety Features
 - **Debouncing:** All inputs are debounced (50ms) to prevent false triggers
-- **Cycle Delay:** 500ms delay between direction changes to prevent rapid switching
+- **Cycle Delay:** 500ms delay between direction changes to prevent rapid switching and ensure outputs are never active simultaneously
 - **End-stop Detection:** Automatic reversal when end-stops are triggered
+- **Dual End-stop Protection:** If both end-stops trigger simultaneously (sensor malfunction), system immediately stops all outputs and returns to manual mode
+- **Sequential Output Control:** When switching directions, one output is turned OFF before the other is turned ON to prevent simultaneous activation
 - **Clean Shutdown:** All outputs turn OFF when exiting auto mode
 
 ## Customization
@@ -100,15 +102,20 @@ The sketch outputs status information via Serial at 115200 baud:
 
 ## Building and Uploading
 
-### Using Arduino IDE
-1. Open `grout-pump.ino` in Arduino IDE
-2. Install ESP32 board support if not already installed:
+### Using PlatformIO (Recommended)
+This project is configured for PlatformIO. See the main [README.md](README.md) for build instructions.
+
+### Using Arduino IDE (Alternative)
+1. Copy `src/main.cpp` to a new folder named `grout-pump`
+2. Rename it to `grout-pump.ino`
+3. Remove the `#include <Arduino.h>` line from the top
+4. Install ESP32 board support if not already installed:
    - File → Preferences → Additional Board Manager URLs
    - Add: `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
    - Tools → Board → Boards Manager → Search "ESP32" → Install
-3. Select your ESP32 board: Tools → Board → ESP32 Arduino → [Your Board]
-4. Select the correct port: Tools → Port → [Your COM Port]
-5. Click Upload
+5. Select your ESP32 board: Tools → Board → ESP32 Arduino → ESP32 Dev Module
+6. Select the correct port: Tools → Port → [Your COM Port]
+7. Click Upload
 
 ### Using PlatformIO
 1. Create a `platformio.ini` file (see example below)

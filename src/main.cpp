@@ -178,6 +178,16 @@ void handleAutoLoopMode() {
   bool endStopIn = (digitalRead(ENDSTOP_IN_PIN) == LOW);
   bool endStopOut = (digitalRead(ENDSTOP_OUT_PIN) == LOW);
   
+  // Safety check: Both end stops triggered simultaneously (sensor malfunction)
+  if (endStopIn && endStopOut) {
+    Serial.println("ERROR: Both end stops triggered! Stopping all outputs.");
+    digitalWrite(GPO1_PIN, LOW);
+    digitalWrite(GPO2_PIN, LOW);
+    cycleDirection = CYCLE_STOPPED;
+    currentMode = MODE_MANUAL;  // Return to manual mode for safety
+    return;
+  }
+  
   // Check for end stop triggers and reverse direction
   if (cycleDirection == CYCLE_IN && endStopIn) {
     Serial.println("End stop IN reached - switching to OUT cycle");
@@ -190,6 +200,7 @@ void handleAutoLoopMode() {
   }
   
   // Apply cycle delay after direction change to prevent immediate reversal
+  // This also ensures both outputs are never active simultaneously
   if (millis() - lastCycleTime < CYCLE_DELAY) {
     digitalWrite(GPO1_PIN, LOW);
     digitalWrite(GPO2_PIN, LOW);
@@ -197,12 +208,13 @@ void handleAutoLoopMode() {
   }
   
   // Control outputs based on cycle direction
+  // Safety: Explicitly ensure only one output is active at a time
   if (cycleDirection == CYCLE_IN) {
-    digitalWrite(GPO1_PIN, HIGH);
-    digitalWrite(GPO2_PIN, LOW);
+    digitalWrite(GPO2_PIN, LOW);  // Turn off GPO2 first
+    digitalWrite(GPO1_PIN, HIGH);  // Then turn on GPO1
   } else if (cycleDirection == CYCLE_OUT) {
-    digitalWrite(GPO1_PIN, LOW);
-    digitalWrite(GPO2_PIN, HIGH);
+    digitalWrite(GPO1_PIN, LOW);  // Turn off GPO1 first
+    digitalWrite(GPO2_PIN, HIGH);  // Then turn on GPO2
   } else {
     digitalWrite(GPO1_PIN, LOW);
     digitalWrite(GPO2_PIN, LOW);
