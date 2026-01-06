@@ -123,6 +123,7 @@ void setup() {
   // Initialize LittleFS for web files
   if (!LittleFS.begin(true)) {
     Serial.println("LittleFS mount failed! Web interface may not work.");
+    Serial.println("Upload filesystem files using: pio run --target uploadfs");
   } else {
     Serial.println("LittleFS mounted successfully");
   }

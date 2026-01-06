@@ -116,7 +116,7 @@ function validateTimeout(input) {
     
     if (isNaN(value) || value < min || value > max) {
         input.style.borderColor = '#f44336';
-        showValidationMessage(input, `Value must be between ${min} and ${max} ms`);
+        showValidationMessage(input, 'Value must be between 1,000 and 300,000 ms');
         return false;
     } else {
         input.style.borderColor = '#4caf50';
