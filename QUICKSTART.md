@@ -26,8 +26,12 @@
 - **Button C** - Start automatic cycling
 - **Button D** - Stop automatic cycling
 
-### Web Interface
-- **Home** - View current status
+### Web Interface (NEW v2.0)
+The web interface now features a modern, responsive design with:
+- **Auto-Refresh** - Toggle real-time status updates every 2 seconds
+- **Animated Indicators** - Visual feedback for GPO states
+- **Live Updates** - Status updates without page reload
+- **Home** - View current status with live updates
 - **Settings** - Configure timing and WiFi
 - **Status** - JSON API endpoint
 
@@ -131,12 +135,14 @@ System automatically stops and returns to manual mode if:
 |----------|------|-------|
 | SSR 1 (Extend) | 25 | Output |
 | SSR 2 (Retract) | 26 | Output |
-| Button A (Extend) | 32 | Input, internal pull-up |
-| Button B (Retract) | 33 | Input, internal pull-up |
-| Button C (Auto) | 34 | Input, **needs external 10kΩ pull-up** |
-| Button D (Stop) | 35 | Input, **needs external 10kΩ pull-up** |
-| End-stop IN | 36 | Input, **needs external 10kΩ pull-up** |
-| End-stop OUT | 39 | Input, **needs external 10kΩ pull-up** |
+| Button A (Extend) | 32 | Input, internal pull-up ✅ |
+| Button B (Retract) | 33 | Input, internal pull-up ✅ |
+| Button C (Auto) | 12 | Input, internal pull-up ✅ |
+| Button D (Stop) | 13 | Input, internal pull-up ✅ |
+| End-stop IN | 14 | Input, internal pull-up ✅ |
+| End-stop OUT | 15 | Input, internal pull-up ✅ |
+
+**✨ All inputs now support internal pull-ups - no external resistors needed!**
 
 ## API Reference
 

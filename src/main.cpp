@@ -12,6 +12,7 @@
 #include <ESPmDNS.h>
 #include <ArduinoOTA.h>
 #include <Preferences.h>
+#include <LittleFS.h>
 
 // ========== PIN DEFINITIONS ==========
 // GPO Outputs - Control SSRs for hydraulic valve
@@ -19,14 +20,15 @@ const int GPO1_PIN = 25;  // SSR 1 output
 const int GPO2_PIN = 26;  // SSR 2 output
 
 // GPI Inputs - Wireless Remote Control (momentary switches)
-const int INPUT_A_PIN = 32;  // Manual control for GPO1
-const int INPUT_B_PIN = 33;  // Manual control for GPO2
-const int INPUT_C_PIN = 34;  // Start automatic loop mode
-const int INPUT_D_PIN = 35;  // Stop automatic loop mode
+// All pins now support internal pull-ups - no external resistors needed!
+const int INPUT_A_PIN = 32;  // Manual control for GPO1 (extend)
+const int INPUT_B_PIN = 33;  // Manual control for GPO2 (retract)
+const int INPUT_C_PIN = 12;  // Start automatic loop mode
+const int INPUT_D_PIN = 13;  // Stop automatic loop mode
 
 // GPI Inputs - End Stop Sensors
-const int ENDSTOP_IN_PIN = 36;   // End stop for "in" position
-const int ENDSTOP_OUT_PIN = 39;  // End stop for "out" position
+const int ENDSTOP_IN_PIN = 14;   // End stop for "in" position
+const int ENDSTOP_OUT_PIN = 15;  // End stop for "out" position
 
 // ========== CONSTANTS ==========
 const unsigned long DEBOUNCE_DELAY = 50;  // Debounce time in milliseconds
@@ -76,8 +78,6 @@ unsigned long lastCycleTime = 0;
 unsigned long cycleStartTime = 0;  // Track when cycle movement started for timeout
 
 // ========== FORWARD DECLARATIONS ==========
-void handleRoot();
-void handleSettings();
 void handleSaveSettings();
 void handleStatus();
 void handleSetWiFi();
@@ -99,17 +99,14 @@ void setup() {
   digitalWrite(GPO1_PIN, LOW);
   digitalWrite(GPO2_PIN, LOW);
   
-  // Configure GPI pins as inputs with pull-up resistors
-  // Note: GPIO 32-33 support internal pull-ups
+  // Configure GPI pins as inputs with internal pull-up resistors
+  // All pins now support internal pull-ups - no external resistors needed!
   pinMode(INPUT_A_PIN, INPUT_PULLUP);
   pinMode(INPUT_B_PIN, INPUT_PULLUP);
-  
-  // GPIO 34-39 are input-only and do NOT support internal pull-ups
-  // External pull-up resistors (10kΩ) should be added if switches connect to ground
-  pinMode(INPUT_C_PIN, INPUT);
-  pinMode(INPUT_D_PIN, INPUT);
-  pinMode(ENDSTOP_IN_PIN, INPUT);
-  pinMode(ENDSTOP_OUT_PIN, INPUT);
+  pinMode(INPUT_C_PIN, INPUT_PULLUP);
+  pinMode(INPUT_D_PIN, INPUT_PULLUP);
+  pinMode(ENDSTOP_IN_PIN, INPUT_PULLUP);
+  pinMode(ENDSTOP_OUT_PIN, INPUT_PULLUP);
   
   Serial.println("System initialized in MANUAL mode");
   Serial.println("Pin Configuration:");
@@ -121,6 +118,14 @@ void setup() {
   Serial.println("  Input D (Stop Loop): GPIO " + String(INPUT_D_PIN));
   Serial.println("  End Stop IN: GPIO " + String(ENDSTOP_IN_PIN));
   Serial.println("  End Stop OUT: GPIO " + String(ENDSTOP_OUT_PIN));
+  Serial.println("  All inputs use internal pull-ups - no external resistors needed!");
+  
+  // Initialize LittleFS for web files
+  if (!LittleFS.begin(true)) {
+    Serial.println("LittleFS mount failed! Web interface may not work.");
+  } else {
+    Serial.println("LittleFS mounted successfully");
+  }
   
   // Load settings from flash
   loadSettings();
@@ -426,137 +431,29 @@ void setupOTA() {
 
 // ========== WEB SERVER SETUP ==========
 void setupWebServer() {
-  server.on("/", handleRoot);
-  server.on("/settings", handleSettings);
+  // Serve static files from LittleFS
+  server.serveStatic("/", LittleFS, "/index.html");
+  server.serveStatic("/index.html", LittleFS, "/index.html");
+  server.serveStatic("/settings.html", LittleFS, "/settings.html");
+  server.serveStatic("/style.css", LittleFS, "/style.css");
+  server.serveStatic("/script.js", LittleFS, "/script.js");
+  
+  // API endpoints
   server.on("/save", HTTP_POST, handleSaveSettings);
   server.on("/status", handleStatus);
   server.on("/setwifi", HTTP_POST, handleSetWiFi);
   
+  // 404 handler
+  server.onNotFound([]() {
+    server.send(404, "text/plain", "404: File not found");
+  });
+  
   server.begin();
   Serial.println("Web server started");
+  Serial.println("Web files served from LittleFS filesystem");
 }
 
 // ========== WEB SERVER HANDLERS ==========
-void handleRoot() {
-  String html = "<!DOCTYPE html><html><head>";
-  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<style>";
-  html += "body { font-family: Arial; margin: 20px; background: #f0f0f0; }";
-  html += ".container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }";
-  html += "h1 { color: #333; }";
-  html += ".status { padding: 15px; margin: 10px 0; border-radius: 5px; }";
-  html += ".status.manual { background: #e3f2fd; border-left: 4px solid #2196F3; }";
-  html += ".status.auto { background: #fff3e0; border-left: 4px solid #ff9800; }";
-  html += ".btn { display: inline-block; padding: 10px 20px; margin: 5px; background: #2196F3; color: white; text-decoration: none; border-radius: 5px; }";
-  html += ".btn:hover { background: #1976D2; }";
-  html += ".info { background: #e8f5e9; padding: 10px; margin: 10px 0; border-radius: 5px; }";
-  html += "</style></head><body>";
-  html += "<div class='container'>";
-  html += "<h1>🚰 Grout Pump Control</h1>";
-  
-  // Status display
-  html += "<div class='status " + String(currentMode == MODE_MANUAL ? "manual" : "auto") + "'>";
-  html += "<h2>Current Status</h2>";
-  html += "<p><strong>Mode:</strong> " + String(currentMode == MODE_MANUAL ? "MANUAL" : "AUTO LOOP") + "</p>";
-  if (currentMode == MODE_AUTO_LOOP) {
-    html += "<p><strong>Cycle Direction:</strong> ";
-    if (cycleDirection == CYCLE_IN) html += "IN (Retracting)";
-    else if (cycleDirection == CYCLE_OUT) html += "OUT (Extending)";
-    else html += "STOPPED";
-    html += "</p>";
-  }
-  html += "<p><strong>GPO1 (SSR1):</strong> " + String(digitalRead(GPO1_PIN) ? "ON" : "OFF") + "</p>";
-  html += "<p><strong>GPO2 (SSR2):</strong> " + String(digitalRead(GPO2_PIN) ? "ON" : "OFF") + "</p>";
-  html += "</div>";
-  
-  // Network info
-  html += "<div class='info'>";
-  html += "<h3>Network Information</h3>";
-  if (WiFi.getMode() == WIFI_STA && WiFi.status() == WL_CONNECTED) {
-    html += "<p><strong>WiFi:</strong> Connected to " + wifiSSID + "</p>";
-    html += "<p><strong>IP Address:</strong> " + WiFi.localIP().toString() + "</p>";
-    html += "<p><strong>Access via:</strong> http://groutpump.local</p>";
-  } else {
-    html += "<p><strong>WiFi:</strong> AP Mode (Setup)</p>";
-    html += "<p><strong>AP IP:</strong> " + WiFi.softAPIP().toString() + "</p>";
-  }
-  html += "</div>";
-  
-  // Navigation
-  html += "<div style='margin-top: 20px;'>";
-  html += "<a href='/settings' class='btn'>⚙️ Settings</a>";
-  html += "<a href='/status' class='btn'>📊 Status JSON</a>";
-  html += "<a href='/' class='btn'>🔄 Refresh</a>";
-  html += "</div>";
-  
-  html += "<p style='margin-top: 20px; color: #666; font-size: 12px;'>Grout Pump Control v1.0</p>";
-  html += "</div></body></html>";
-  
-  server.send(200, "text/html", html);
-}
-
-void handleSettings() {
-  String html = "<!DOCTYPE html><html><head>";
-  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<style>";
-  html += "body { font-family: Arial; margin: 20px; background: #f0f0f0; }";
-  html += ".container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }";
-  html += "h1, h2 { color: #333; }";
-  html += "form { margin: 20px 0; }";
-  html += "label { display: block; margin: 10px 0 5px; font-weight: bold; }";
-  html += "input[type='text'], input[type='password'], input[type='number'] { width: 100%; padding: 8px; margin: 5px 0; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px; }";
-  html += "input[type='checkbox'] { margin-right: 10px; }";
-  html += "input[type='submit'] { background: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin-top: 10px; }";
-  html += "input[type='submit']:hover { background: #45a049; }";
-  html += ".btn { display: inline-block; padding: 10px 20px; margin: 5px; background: #2196F3; color: white; text-decoration: none; border-radius: 5px; }";
-  html += ".section { background: #f9f9f9; padding: 15px; margin: 15px 0; border-radius: 5px; }";
-  html += "</style></head><body>";
-  html += "<div class='container'>";
-  html += "<h1>⚙️ Settings</h1>";
-  
-  // WiFi Settings
-  html += "<div class='section'>";
-  html += "<h2>WiFi Configuration</h2>";
-  html += "<form action='/setwifi' method='POST'>";
-  html += "<label>SSID:</label>";
-  html += "<input type='text' name='ssid' value='" + wifiSSID + "' required>";
-  html += "<label>Password:</label>";
-  html += "<input type='password' name='password' value='" + wifiPassword + "'>";
-  html += "<input type='submit' value='💾 Save WiFi Settings'>";
-  html += "<p style='color: #666; font-size: 12px;'>Note: Device will restart after saving WiFi settings</p>";
-  html += "</form>";
-  html += "</div>";
-  
-  // Timing Settings
-  html += "<div class='section'>";
-  html += "<h2>Timing Configuration</h2>";
-  html += "<form action='/save' method='POST'>";
-  html += "<label>Cycle Timeout (milliseconds):</label>";
-  html += "<input type='number' name='timeout' value='" + String(cycleTimeout) + "' min='1000' max='300000' required>";
-  html += "<p style='color: #666; font-size: 12px;'>Time allowed for hydraulic valve to reach end-stop (1000ms = 1 second)</p>";
-  html += "<label><input type='checkbox' name='timeoutEnabled' " + String(timeoutEnabled ? "checked" : "") + ">Enable Timeout Protection</label>";
-  html += "<input type='submit' value='💾 Save Timing Settings'>";
-  html += "</form>";
-  html += "</div>";
-  
-  // OTA Info
-  html += "<div class='section'>";
-  html += "<h2>OTA Updates</h2>";
-  html += "<p><strong>Status:</strong> Enabled</p>";
-  html += "<p><strong>Hostname:</strong> groutpump</p>";
-  html += "<p><strong>Password:</strong> groutpump123</p>";
-  html += "<p style='color: #666; font-size: 12px;'>Use Arduino IDE or PlatformIO to upload firmware over WiFi</p>";
-  html += "</div>";
-  
-  html += "<div style='margin-top: 20px;'>";
-  html += "<a href='/' class='btn'>🏠 Home</a>";
-  html += "</div>";
-  
-  html += "</div></body></html>";
-  
-  server.send(200, "text/html", html);
-}
-
 void handleSaveSettings() {
   if (server.hasArg("timeout")) {
     unsigned long newTimeout = server.arg("timeout").toInt();
@@ -634,6 +531,7 @@ void handleStatus() {
   json += "\"cycleTimeout\":" + String(cycleTimeout) + ",";
   json += "\"timeoutEnabled\":" + String(timeoutEnabled ? "true" : "false") + ",";
   json += "\"wifiConnected\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
+  json += "\"wifiSSID\":\"" + (WiFi.status() == WL_CONNECTED ? wifiSSID : "AP Mode") + "\",";
   json += "\"ipAddress\":\"" + (WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : WiFi.softAPIP().toString()) + "\"";
   json += "}";
   

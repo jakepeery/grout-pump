@@ -21,24 +21,26 @@ This Arduino sketch for the **Freenove ESP32-WROOM development board** controls 
 ### Outputs (GPO)
 | Pin | Function | Description |
 |-----|----------|-------------|
-| GPIO 25 | GPO1 | SSR #1 control output |
-| GPIO 26 | GPO2 | SSR #2 control output |
+| GPIO 25 | GPO1 | SSR #1 control output (extend) |
+| GPIO 26 | GPO2 | SSR #2 control output (retract) |
 
 ### Inputs (GPI) - Remote Control
 | Pin | Function | Description |
 |-----|----------|-------------|
 | GPIO 32 | Input A | Manual control for GPO1 (extend valve) |
 | GPIO 33 | Input B | Manual control for GPO2 (retract valve) |
-| GPIO 34 | Input C | Start automatic loop mode |
-| GPIO 35 | Input D | Stop automatic loop mode |
+| GPIO 12 | Input C | Start automatic loop mode |
+| GPIO 13 | Input D | Stop automatic loop mode |
 
 ### Inputs (GPI) - End Stops
 | Pin | Function | Description |
 |-----|----------|-------------|
-| GPIO 36 | End Stop IN | Detects fully retracted position |
-| GPIO 39 | End Stop OUT | Detects fully extended position |
+| GPIO 14 | End Stop IN | Detects fully retracted position |
+| GPIO 15 | End Stop OUT | Detects fully extended position |
 
 **Note:** All inputs use internal pull-up resistors and expect active-low signals (pressed = LOW, released = HIGH).
+
+**✨ NEW: No external pull-up resistors required!** All input pins now support internal pull-ups, making the hardware setup much simpler.
 
 ## Freenove ESP32-WROOM Board Notes
 
@@ -54,16 +56,18 @@ The Freenove ESP32-WROOM-32 board features:
 - **GPIO 6-11** are connected to internal flash - DO NOT USE
 - **GPIO 0** is used for boot mode selection - avoid unless necessary
 - **GPIO 2** has built-in LED - can be used but LED will flash
-- Safe output pins: 4, 5, 12-19, 21-23, 25-27, 32-33
+- Safe output pins: 4, 5, 16-19, 21-23, 25-27, 32-33
 - Safe input pins (with pull-up): 4, 5, 12-15, 18-19, 21-23, 25-27, 32-33
-- Input-only pins (external pull-up required): 34-39
+- Input-only pins (no internal pull-up): 34-39
 
 ### Pin Selection Rationale
 The pins chosen in this project follow these guidelines:
 - **GPIO 25, 26**: Output pins for SSRs (safe, no special functions)
 - **GPIO 32, 33**: Remote inputs A & B (support internal pull-ups)
-- **GPIO 34, 35**: Remote inputs C & D (input-only, need external pull-ups if not provided by remote)
-- **GPIO 36, 39**: End-stop sensors (input-only, VP and VN ADC pins)
+- **GPIO 12, 13**: Remote inputs C & D (support internal pull-ups)
+- **GPIO 14, 15**: End-stop sensors (support internal pull-ups)
+
+**All input pins support internal pull-ups, eliminating the need for external resistors!**
 
 ## Operation Modes
 
@@ -212,41 +216,28 @@ GPIO 26 ----------------> IN+
 GND --------------------> IN-             Power Control (Retract)
 
 ESP32 (Freenove WROOM)   Remote Control
-GPIO 32 <---------------- Button A (active-low with internal pull-up)
-GPIO 33 <---------------- Button B (active-low with internal pull-up)
-                          
-                          For GPIO 34 & 35 (input-only pins):
-                          Add 10kΩ pull-up resistors to 3.3V
-3.3V ----[10kΩ]------+
-                     |
-GPIO 34 <------------+--- Button C (active-low, external pull-up required)
-                     
-3.3V ----[10kΩ]------+
-                     |
-GPIO 35 <------------+--- Button D (active-low, external pull-up required)
-
+                          All pins use internal pull-ups - no external resistors needed!
+GPIO 32 <---------------- Button A (active-low, internal pull-up)
+GPIO 33 <---------------- Button B (active-low, internal pull-up)
+GPIO 12 <---------------- Button C (active-low, internal pull-up)
+GPIO 13 <---------------- Button D (active-low, internal pull-up)
 GND <-------------------- Common Ground for all buttons
 
 ESP32 (Freenove WROOM)   End Stops
-                          For GPIO 36 & 39 (input-only pins):
-                          Add 10kΩ pull-up resistors to 3.3V
-3.3V ----[10kΩ]------+
-                     |
-GPIO 36 <------------+--- IN Limit Switch (active-low, external pull-up required)
-                     
-3.3V ----[10kΩ]------+
-                     |
-GPIO 39 <------------+--- OUT Limit Switch (active-low, external pull-up required)
-
+                          All pins use internal pull-ups - no external resistors needed!
+GPIO 14 <---------------- IN Limit Switch (active-low, internal pull-up)
+GPIO 15 <---------------- OUT Limit Switch (active-low, internal pull-up)
 GND <-------------------- Common Ground for all sensors
 ```
 
-### Pull-up Resistor Requirements
-- **GPIO 32, 33**: Internal pull-ups enabled in code (10kΩ equivalent)
-- **GPIO 34, 35, 36, 39**: **MUST** use external 10kΩ pull-up resistors to 3.3V
-  - These are input-only pins without internal pull-up capability
-  - Connect one side of resistor to 3.3V, other side to the GPIO pin
-  - Switch/sensor connects between GPIO pin and GND
+### Simplified Wiring - No External Pull-ups Required!
+**✨ All input pins (GPIO 12, 13, 14, 15, 32, 33) now support internal pull-ups!**
+
+Simply connect your switches/sensors between the GPIO pin and GND:
+- When switch/sensor is open: GPIO reads HIGH (pulled up internally)
+- When switch/sensor closes: GPIO reads LOW (active)
+
+This eliminates the need for external 10kΩ pull-up resistors, making the hardware setup much simpler and more reliable!
 
 ## License
 This project is open source and available for modification and distribution.

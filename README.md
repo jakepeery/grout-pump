@@ -49,7 +49,16 @@ pio device monitor
 ### After WiFi Configuration
 - Access via mDNS: `http://groutpump.local`
 - Or use the IP address shown in serial monitor
+- **NEW:** Modern web interface with auto-refresh and live updates
+- **NEW:** Separate HTML/CSS/JavaScript files for easy customization
 - Configure cycle timeout and other settings via web interface
+
+## Filesystem Upload (for web files)
+To upload the web interface files to the ESP32:
+```bash
+# Using PlatformIO
+pio run --target uploadfs
+```
 
 ## OTA Updates
 After initial setup, you can update firmware wirelessly:
@@ -63,6 +72,11 @@ Or use Arduino IDE and select "groutpump at [IP]" from the Port menu.
 ## Project Structure
 ```
 grout-pump/
+├── data/                  - Web interface files (served via LittleFS)
+│   ├── index.html        - Main status page
+│   ├── settings.html     - Configuration page
+│   ├── style.css         - Modern styling with animations
+│   └── script.js         - Auto-refresh and live updates
 ├── src/
 │   └── main.cpp          - Main ESP32 application (with web server & OTA)
 ├── platformio.ini        - PlatformIO configuration
