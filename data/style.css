@@ -23,6 +23,28 @@ h1 {
     padding-bottom: 10px;
 }
 
+#estop-alert {
+    background: #ff5252;
+    color: white;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(244, 67, 54, 0.4);
+    animation: pulse 1s infinite alternate;
+}
+
+#estop-alert h2 {
+    color: white;
+    margin: 0 0 10px 0;
+    font-size: 1.8em;
+}
+
+@keyframes pulse {
+    from { transform: scale(1); }
+    to { transform: scale(1.02); }
+}
+
 h2 {
     color: #555;
     font-size: 1.5em;
@@ -55,6 +77,11 @@ h3 {
 .status.auto {
     background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
     border-left: 6px solid #ff9800;
+}
+
+.status.inputs {
+    background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
+    border-left: 6px solid #9c27b0;
 }
 
 .status p {

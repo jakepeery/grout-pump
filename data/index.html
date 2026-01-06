@@ -10,6 +10,11 @@
     <div class="container">
         <h1>🚰 Grout Pump Control</h1>
         
+        <div id="estop-alert" style="display: none;">
+            <h2>⚠️ EMERGENCY STOP ACTIVE ⚠️</h2>
+            <p>Check Physical Stop Button or Wiring</p>
+        </div>
+
         <div class="status manual" id="status-box">
             <h2>Current Status</h2>
             <p><strong>Mode:</strong> <span id="mode">Loading...</span></p>
@@ -17,17 +22,42 @@
                 <p><strong>Cycle Direction:</strong> <span id="cycle-direction">-</span></p>
             </div>
             <p id="gpo1">
-                <strong>GPO1 (SSR1):</strong> 
+                <strong>GPO1 (SSR1) [GPIO 25]:</strong> 
                 <span class="indicator off"></span>
                 <span class="status-text">Loading...</span>
             </p>
             <p id="gpo2">
-                <strong>GPO2 (SSR2):</strong> 
+                <strong>GPO2 (SSR2) [GPIO 26]:</strong> 
                 <span class="indicator off"></span>
                 <span class="status-text">Loading...</span>
             </p>
-            <p><strong>End-Stop IN:</strong> <span id="endstop-in">Loading...</span></p>
-            <p><strong>End-Stop OUT:</strong> <span id="endstop-out">Loading...</span></p>
+            <p><strong>End-Stop IN [GPIO 32]:</strong> <span id="endstop-in">Loading...</span></p>
+            <p><strong>End-Stop OUT [GPIO 33]:</strong> <span id="endstop-out">Loading...</span></p>
+            <p><strong>E-Stop [GPIO 27]:</strong> <span id="estop-status">Loading...</span></p>
+        </div>
+
+        <div class="status inputs" id="inputs-box">
+            <h2>Wireless Inputs</h2>
+            <p id="input-a">
+                <strong>Input A (Manual Extend) [GPIO 12]:</strong> 
+                <span class="indicator off"></span>
+                <span class="status-text">Loading...</span>
+            </p>
+            <p id="input-b">
+                <strong>Input B (Manual Retract) [GPIO 13]:</strong> 
+                <span class="indicator off"></span>
+                <span class="status-text">Loading...</span>
+            </p>
+            <p id="input-c">
+                <strong>Input C (Start Loop) [GPIO 14]:</strong> 
+                <span class="indicator off"></span>
+                <span class="status-text">Loading...</span>
+            </p>
+            <p id="input-d">
+                <strong>Input D (Stop Loop) [GPIO 15]:</strong> 
+                <span class="indicator off"></span>
+                <span class="status-text">Loading...</span>
+            </p>
         </div>
         
         <div class="info">
@@ -43,7 +73,7 @@
             <button onclick="location.reload()" class="btn">🔄 Refresh</button>
         </div>
         
-        <p class="footer">Grout Pump Control v2.0 - ESP32 System</p>
+        <p class="footer">Grout Pump Control v2.1 - ESP32 System</p>
     </div>
     
     <script src="/script.js"></script>

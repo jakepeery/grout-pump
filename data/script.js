@@ -36,6 +36,26 @@ async function updateStatus() {
         const response = await fetch('/status');
         const data = await response.json();
         
+        // Handle E-Stop State
+        const estopAlert = document.getElementById('estop-alert');
+        const estopStatus = document.getElementById('estop-status');
+        
+        if (data.estopActive) {
+            if (estopAlert) estopAlert.style.display = 'block';
+            if (estopStatus) {
+                estopStatus.textContent = 'ACTIVATED';
+                estopStatus.style.color = 'red';
+                estopStatus.style.fontWeight = 'bold';
+            }
+        } else {
+            if (estopAlert) estopAlert.style.display = 'none';
+            if (estopStatus) {
+                estopStatus.textContent = 'OK';
+                estopStatus.style.color = '#4caf50';
+                estopStatus.style.fontWeight = 'normal';
+            }
+        }
+
         // Update mode
         const modeElement = document.getElementById('mode');
         if (modeElement) {
@@ -67,6 +87,12 @@ async function updateStatus() {
         // Update end-stop states
         updateEndStopStatus('endstop-in', data.endStopIn);
         updateEndStopStatus('endstop-out', data.endStopOut);
+        
+        // Update Wireless Input states
+        updateGPOStatus('input-a', data.inputA);
+        updateGPOStatus('input-b', data.inputB);
+        updateGPOStatus('input-c', data.inputC);
+        updateGPOStatus('input-d', data.inputD);
         
         // Update network information
         const wifiStatus = document.getElementById('wifi-status');

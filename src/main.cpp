@@ -13,6 +13,7 @@
 #include <ArduinoOTA.h>
 #include <Preferences.h>
 #include <LittleFS.h>
+#include <Update.h>
 
 // ========== PIN DEFINITIONS ==========
 // GPO Outputs - Control SSRs for hydraulic valve
@@ -21,14 +22,17 @@ const int GPO2_PIN = 26;  // SSR 2 output
 
 // GPI Inputs - Wireless Remote Control (momentary switches)
 // All pins now support internal pull-ups - no external resistors needed!
-const int INPUT_A_PIN = 32;  // Manual control for GPO1 (extend)
-const int INPUT_B_PIN = 33;  // Manual control for GPO2 (retract)
-const int INPUT_C_PIN = 12;  // Start automatic loop mode
-const int INPUT_D_PIN = 13;  // Stop automatic loop mode
+const int INPUT_A_PIN = 12;  // Manual control for GPO1 (extend) - Moved from 32
+const int INPUT_B_PIN = 13;  // Manual control for GPO2 (retract) - Moved from 33
+const int INPUT_C_PIN = 14;  // Start automatic loop mode - Moved from 12
+const int INPUT_D_PIN = 15;  // Stop automatic loop mode - Moved from 13
 
 // GPI Inputs - End Stop Sensors
-const int ENDSTOP_IN_PIN = 14;   // End stop for "in" position
-const int ENDSTOP_OUT_PIN = 15;  // End stop for "out" position
+const int ENDSTOP_IN_PIN = 32;   // End stop for "in" position - Moved from 14
+const int ENDSTOP_OUT_PIN = 33;  // End stop for "out" position - Moved from 15
+
+// Safety Inputs
+const int ESTOP_PIN = 27;        // Emergency Stop (Normally Closed Switch) -> OPEN = STOP
 
 // ========== CONSTANTS ==========
 const unsigned long DEBOUNCE_DELAY = 50;  // Debounce time in milliseconds
@@ -67,17 +71,29 @@ struct ButtonState {
   bool currentState;
   unsigned long lastDebounceTime;
   bool pressed;  // True when a valid press is detected
+  unsigned long lastPressTime; // For UI visualization
 };
 
-ButtonState inputA = {HIGH, HIGH, 0, false};
-ButtonState inputB = {HIGH, HIGH, 0, false};
-ButtonState inputC = {HIGH, HIGH, 0, false};
-ButtonState inputD = {HIGH, HIGH, 0, false};
+ButtonState inputA = {HIGH, HIGH, 0, false, 0};
+ButtonState inputB = {HIGH, HIGH, 0, false, 0};
+ButtonState inputC = {HIGH, HIGH, 0, false, 0};
+ButtonState inputD = {HIGH, HIGH, 0, false, 0};
 
 unsigned long lastCycleTime = 0;
 unsigned long cycleStartTime = 0;  // Track when cycle movement started for timeout
 
+// Endstop state tracking for debug output
+bool lastEndStopIn = HIGH;
+bool lastEndStopOut = HIGH;
+
+// Emergency Stop State
+bool isEstopActive = false;
+
+
 // ========== FORWARD DECLARATIONS ==========
+void updateButtonState(ButtonState* btn, int pin);
+void handleManualMode();
+void handleAutoLoopMode();
 void handleSaveSettings();
 void handleStatus();
 void handleSetWiFi();
@@ -107,6 +123,7 @@ void setup() {
   pinMode(INPUT_D_PIN, INPUT_PULLUP);
   pinMode(ENDSTOP_IN_PIN, INPUT_PULLUP);
   pinMode(ENDSTOP_OUT_PIN, INPUT_PULLUP);
+  pinMode(ESTOP_PIN, INPUT_PULLUP);
   
   Serial.println("System initialized in MANUAL mode");
   Serial.println("Pin Configuration:");
@@ -118,6 +135,7 @@ void setup() {
   Serial.println("  Input D (Stop Loop): GPIO " + String(INPUT_D_PIN));
   Serial.println("  End Stop IN: GPIO " + String(ENDSTOP_IN_PIN));
   Serial.println("  End Stop OUT: GPIO " + String(ENDSTOP_OUT_PIN));
+  Serial.println("  E-STOP (NC): GPIO " + String(ESTOP_PIN));
   Serial.println("  All inputs use internal pull-ups - no external resistors needed!");
   
   // Initialize LittleFS for web files
@@ -151,13 +169,60 @@ void loop() {
   // Handle web server requests
   server.handleClient();
   
+  // Check Emergency Stop (Normally Closed -> Pullup makes it HIGH when Open/broken)
+  if (digitalRead(ESTOP_PIN) == HIGH) {
+    if (!isEstopActive) {
+      Serial.println("!!! EMERGENCY STOP ACTIVATED !!!");
+      isEstopActive = true;
+    }
+    
+    // Safety: Force everything off immediately
+    digitalWrite(GPO1_PIN, LOW);
+    digitalWrite(GPO2_PIN, LOW);
+    currentMode = MODE_MANUAL;
+    cycleDirection = CYCLE_STOPPED;
+    
+    // Skip remaining logic
+    return;
+  } else {
+    // ESTOP Released
+    if (isEstopActive) {
+      Serial.println("Emergency Stop Released - Returning to MANUAL mode");
+      isEstopActive = false;
+      // System remains in MANUAL mode for safety until manually started
+    }
+  }
+
   // Read and debounce all inputs
   updateButtonState(&inputA, INPUT_A_PIN);
   updateButtonState(&inputB, INPUT_B_PIN);
   updateButtonState(&inputC, INPUT_C_PIN);
   updateButtonState(&inputD, INPUT_D_PIN);
+
+  // Debug Output for Endstops (regardless of mode)
+  bool currentEndStopIn = digitalRead(ENDSTOP_IN_PIN);
+  bool currentEndStopOut = digitalRead(ENDSTOP_OUT_PIN);
+
+  if (currentEndStopIn != lastEndStopIn) {
+    if (currentEndStopIn == LOW) {
+      Serial.println("DEBUG: End Stop IN Triggered! (Mode: " + String(currentMode == MODE_MANUAL ? "MANUAL" : "AUTO") + ")");
+    } else {
+      Serial.println("DEBUG: End Stop IN Released.");
+    }
+    lastEndStopIn = currentEndStopIn;
+  }
+
+  if (currentEndStopOut != lastEndStopOut) {
+    if (currentEndStopOut == LOW) {
+      Serial.println("DEBUG: End Stop OUT Triggered! (Mode: " + String(currentMode == MODE_MANUAL ? "MANUAL" : "AUTO") + ")");
+    } else {
+      Serial.println("DEBUG: End Stop OUT Released.");
+    }
+    lastEndStopOut = currentEndStopOut;
+  }
   
   // Check for mode change requests
+  // Start AUTO loop
   if (inputC.pressed) {
     if (currentMode != MODE_AUTO_LOOP) {
       currentMode = MODE_AUTO_LOOP;
@@ -169,15 +234,19 @@ void loop() {
     inputC.pressed = false;
   }
   
-  if (inputD.pressed) {
+  // Stop AUTO loop (Input D OR Input A OR Input B)
+  if (inputD.pressed || ((currentMode == MODE_AUTO_LOOP) && (inputA.pressed || inputB.pressed))) {
     if (currentMode == MODE_AUTO_LOOP) {
       currentMode = MODE_MANUAL;
       cycleDirection = CYCLE_STOPPED;
       digitalWrite(GPO1_PIN, LOW);
       digitalWrite(GPO2_PIN, LOW);
-      Serial.println("Switched to MANUAL mode - all outputs OFF");
+      if (inputD.pressed) Serial.println("Switched to MANUAL mode (via STOP) - all outputs OFF");
+      else Serial.println("Switched to MANUAL mode (via MANUAL INPUT) - all outputs OFF");
     }
     inputD.pressed = false;
+    // Note: Don't clear inputA/B pressed flags here, let them be handled by handleManualMode if needed
+    // But since we just switched to manual, handleManualMode will run next
   }
   
   // Execute based on current mode
@@ -207,6 +276,7 @@ void updateButtonState(ButtonState* btn, int pin) {
       // This is edge-triggered - the flag is set on press and must be cleared by handler
       if (btn->currentState == LOW) {
         btn->pressed = true;
+        btn->lastPressTime = millis(); // Record timestamp for UI
       } else {
         // Clear pressed flag when button is released
         btn->pressed = false;
@@ -444,6 +514,40 @@ void setupWebServer() {
   server.on("/status", handleStatus);
   server.on("/setwifi", HTTP_POST, handleSetWiFi);
   
+  // Web OTA Update
+  server.on("/update", HTTP_POST, []() {
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
+    delay(1000);
+    ESP.restart();
+  }, []() {
+    HTTPUpload& upload = server.upload();
+    if (upload.status == UPLOAD_FILE_START) {
+      Serial.printf("Update: %s\n", upload.filename.c_str());
+      int command = U_FLASH;
+      if (upload.name == "filesystem") {
+        command = U_SPIFFS;
+        Serial.println("Target: Filesystem");
+      } else {
+        Serial.println("Target: Firmware");
+      }
+      
+      if (!Update.begin(UPDATE_SIZE_UNKNOWN, command)) {
+        Update.printError(Serial);
+      }
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+        Update.printError(Serial);
+      }
+    } else if (upload.status == UPLOAD_FILE_END) {
+      if (Update.end(true)) {
+        Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+      } else {
+        Update.printError(Serial);
+      }
+    }
+  });
+  
   // 404 handler
   server.onNotFound([]() {
     server.send(404, "text/plain", "404: File not found");
@@ -519,6 +623,7 @@ void handleSetWiFi() {
 
 void handleStatus() {
   String json = "{";
+  json += "\"estopActive\":" + String(isEstopActive ? "true" : "false") + ",";
   json += "\"mode\":\"" + String(currentMode == MODE_MANUAL ? "MANUAL" : "AUTO") + "\",";
   json += "\"cycleDirection\":\"";
   if (cycleDirection == CYCLE_IN) json += "IN";
@@ -527,6 +632,17 @@ void handleStatus() {
   json += "\",";
   json += "\"gpo1\":" + String(digitalRead(GPO1_PIN)) + ",";
   json += "\"gpo2\":" + String(digitalRead(GPO2_PIN)) + ",";
+  // Use lastPressTime to show "Active" state if pressed within last 2.5 seconds (UI update rate is ~2s)
+  unsigned long now = millis();
+  bool visInputA = (now - inputA.lastPressTime < 2500) || (digitalRead(INPUT_A_PIN) == LOW);
+  bool visInputB = (now - inputB.lastPressTime < 2500) || (digitalRead(INPUT_B_PIN) == LOW);
+  bool visInputC = (now - inputC.lastPressTime < 2500) || (digitalRead(INPUT_C_PIN) == LOW);
+  bool visInputD = (now - inputD.lastPressTime < 2500) || (digitalRead(INPUT_D_PIN) == LOW);
+  
+  json += "\"inputA\":" + String(visInputA ? "true" : "false") + ",";
+  json += "\"inputB\":" + String(visInputB ? "true" : "false") + ",";
+  json += "\"inputC\":" + String(visInputC ? "true" : "false") + ",";
+  json += "\"inputD\":" + String(visInputD ? "true" : "false") + ",";
   json += "\"endStopIn\":" + String(digitalRead(ENDSTOP_IN_PIN) == LOW ? "true" : "false") + ",";
   json += "\"endStopOut\":" + String(digitalRead(ENDSTOP_OUT_PIN) == LOW ? "true" : "false") + ",";
   json += "\"cycleTimeout\":" + String(cycleTimeout) + ",";
