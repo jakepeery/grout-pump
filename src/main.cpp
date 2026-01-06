@@ -209,17 +209,30 @@ void updateButtonState(ButtonState* btn, int pin) {
 
 // ========== MANUAL MODE HANDLER ==========
 void handleManualMode() {
-  // Input A controls GPO1 directly
-  if (digitalRead(INPUT_A_PIN) == LOW) {
-    digitalWrite(GPO1_PIN, HIGH);
-  } else {
+  bool inputAPressed = (digitalRead(INPUT_A_PIN) == LOW);
+  bool inputBPressed = (digitalRead(INPUT_B_PIN) == LOW);
+  
+  // Safety: Prevent simultaneous activation of both outputs
+  if (inputAPressed && inputBPressed) {
+    // If both buttons pressed, turn off both outputs
     digitalWrite(GPO1_PIN, LOW);
+    digitalWrite(GPO2_PIN, LOW);
+    return;
   }
   
-  // Input B controls GPO2 directly
-  if (digitalRead(INPUT_B_PIN) == LOW) {
+  // Input A controls GPO1 (extend)
+  if (inputAPressed) {
+    digitalWrite(GPO1_PIN, HIGH);
+    digitalWrite(GPO2_PIN, LOW);  // Ensure other output is off
+  } 
+  // Input B controls GPO2 (retract)
+  else if (inputBPressed) {
     digitalWrite(GPO2_PIN, HIGH);
-  } else {
+    digitalWrite(GPO1_PIN, LOW);  // Ensure other output is off
+  } 
+  // No input pressed
+  else {
+    digitalWrite(GPO1_PIN, LOW);
     digitalWrite(GPO2_PIN, LOW);
   }
 }
@@ -542,7 +555,23 @@ void handleSettings() {
 
 void handleSaveSettings() {
   if (server.hasArg("timeout")) {
-    cycleTimeout = server.arg("timeout").toInt();
+    unsigned long newTimeout = server.arg("timeout").toInt();
+    // Validate timeout value (1 second to 5 minutes)
+    if (newTimeout >= 1000 && newTimeout <= 300000) {
+      cycleTimeout = newTimeout;
+    } else {
+      // Invalid value, send error response
+      String html = "<!DOCTYPE html><html><head>";
+      html += "<meta http-equiv='refresh' content='3;url=/settings'>";
+      html += "<style>body { font-family: Arial; text-align: center; padding: 50px; }</style>";
+      html += "</head><body>";
+      html += "<h1>❌ Invalid Timeout Value</h1>";
+      html += "<p>Timeout must be between 1000ms and 300000ms</p>";
+      html += "<p>Redirecting back to settings...</p>";
+      html += "</body></html>";
+      server.send(400, "text/html", html);
+      return;
+    }
   }
   
   timeoutEnabled = server.hasArg("timeoutEnabled");
@@ -574,14 +603,15 @@ void handleSetWiFi() {
   html += "<style>body { font-family: Arial; text-align: center; padding: 50px; }</style>";
   html += "</head><body>";
   html += "<h1>✅ WiFi Settings Saved!</h1>";
-  html += "<p>Device will restart in 3 seconds...</p>";
+  html += "<p>Device will restart momentarily...</p>";
   html += "<p>Please reconnect to your WiFi network and access the device at:</p>";
   html += "<p><strong>http://groutpump.local</strong></p>";
   html += "</body></html>";
   
   server.send(200, "text/html", html);
   
-  delay(3000);
+  // Small delay to ensure response is sent before restart
+  delay(1000);
   ESP.restart();
 }
 

@@ -69,10 +69,13 @@ The pins chosen in this project follow these guidelines:
 
 ### Manual Mode (Default)
 In manual mode, the remote control buttons directly control the outputs:
-- **Button A pressed:** GPO1 turns ON (SSR #1 activates)
+- **Button A pressed:** GPO1 turns ON (SSR #1 activates - extend)
 - **Button A released:** GPO1 turns OFF
-- **Button B pressed:** GPO2 turns ON (SSR #2 activates)
+- **Button B pressed:** GPO2 turns ON (SSR #2 activates - retract)
 - **Button B released:** GPO2 turns OFF
+- **Both buttons pressed:** Both outputs turn OFF (safety feature to prevent simultaneous activation)
+
+**Safety Note:** If both buttons A and B are pressed simultaneously, the system turns off both outputs to prevent potential damage to the hydraulic valve from bidirectional force.
 
 ### Automatic Loop Mode
 Press **Button C** to enter automatic loop mode. The system will:
