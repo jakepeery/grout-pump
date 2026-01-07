@@ -3,18 +3,17 @@
  * 
  * Controls a hydraulic valve using 2 SSR outputs based on wireless remote inputs.
  * Supports manual control and automatic cycling mode with end-stop detection.
- * Features: Web interface (WebSocket+AJAX), OTA updates, WiFi credential storage, safety timeouts
+ * Features: Web interface, OTA updates, WiFi credential storage, safety timeouts
  */
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <ESPAsyncWebServer.h>
+#include <WebServer.h>
 #include <ESPmDNS.h>
 #include <ArduinoOTA.h>
 #include <Preferences.h>
 #include <LittleFS.h>
 #include <Update.h>
-#include <ArduinoJson.h>
 
 // ========== PIN DEFINITIONS ==========
 // GPO Outputs - Control SSRs for hydraulic valve
@@ -22,14 +21,15 @@ const int GPO1_PIN = 25;  // SSR 1 output
 const int GPO2_PIN = 26;  // SSR 2 output
 
 // GPI Inputs - Wireless Remote Control (momentary switches)
-const int INPUT_A_PIN = 12;  // Manual control for GPO1 (extend)
-const int INPUT_B_PIN = 13;  // Manual control for GPO2 (retract)
-const int INPUT_C_PIN = 14;  // Start automatic loop mode
-const int INPUT_D_PIN = 15;  // Stop automatic loop mode
+// All pins now support internal pull-ups - no external resistors needed!
+const int INPUT_A_PIN = 12;  // Manual control for GPO1 (extend) - Moved from 32
+const int INPUT_B_PIN = 13;  // Manual control for GPO2 (retract) - Moved from 33
+const int INPUT_C_PIN = 14;  // Start automatic loop mode - Moved from 12
+const int INPUT_D_PIN = 15;  // Stop automatic loop mode - Moved from 13
 
 // GPI Inputs - End Stop Sensors
-const int ENDSTOP_IN_PIN = 32;   // End stop for "in" position
-const int ENDSTOP_OUT_PIN = 33;  // End stop for "out" position
+const int ENDSTOP_IN_PIN = 32;   // End stop for "in" position - Moved from 14
+const int ENDSTOP_OUT_PIN = 33;  // End stop for "out" position - Moved from 15
 
 // Safety Inputs
 const int ESTOP_PIN = 27;        // Emergency Stop (Normally Closed Switch) -> OPEN = STOP
@@ -38,11 +38,9 @@ const int ESTOP_PIN = 27;        // Emergency Stop (Normally Closed Switch) -> O
 const unsigned long DEBOUNCE_DELAY = 50;  // Debounce time in milliseconds
 const unsigned long CYCLE_DELAY = 500;    // Delay between cycle direction changes
 const unsigned long DEFAULT_CYCLE_TIMEOUT = 30000;  // Default 30 seconds timeout
-const unsigned long STATUS_UPDATE_INTERVAL = 100; // WebSocket broadcast interval (ms)
 
 // ========== GLOBAL OBJECTS ==========
-AsyncWebServer server(80);
-AsyncWebSocket ws("/ws");
+WebServer server(80);
 Preferences preferences;
 
 // ========== CONFIGURATION VARIABLES ==========
@@ -83,7 +81,6 @@ ButtonState inputD = {HIGH, HIGH, 0, false, 0};
 
 unsigned long lastCycleTime = 0;
 unsigned long cycleStartTime = 0;  // Track when cycle movement started for timeout
-unsigned long lastStatusUpdate = 0; // Track last WebSocket broadcast
 
 // Endstop state tracking for debug output
 bool lastEndStopIn = HIGH;
@@ -97,11 +94,9 @@ bool isEstopActive = false;
 void updateButtonState(ButtonState* btn, int pin);
 void handleManualMode();
 void handleAutoLoopMode();
-void handleSaveSettings(AsyncWebServerRequest *request);
-void handleSetWiFi(AsyncWebServerRequest *request);
-String getStatusJson();
-void notifyClients();
-void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);
+void handleSaveSettings();
+void handleStatus();
+void handleSetWiFi();
 void loadSettings();
 void saveSettings();
 void setupWiFi();
@@ -171,21 +166,14 @@ void loop() {
   // Handle OTA updates
   ArduinoOTA.handle();
   
-  // WebSocket cleanup
-  ws.cleanupClients();
+  // Handle web server requests
+  server.handleClient();
   
-  // Broadcast status via WebSocket
-  if (millis() - lastStatusUpdate > STATUS_UPDATE_INTERVAL) {
-    notifyClients();
-    lastStatusUpdate = millis();
-  }
-  
-  // Check Emergency Stop (Normal Open logic for NC switch: HIGH = Open/Triggered)
+  // Check Emergency Stop (Normally Closed -> Pullup makes it HIGH when Open/broken)
   if (digitalRead(ESTOP_PIN) == HIGH) {
     if (!isEstopActive) {
       Serial.println("!!! EMERGENCY STOP ACTIVATED !!!");
       isEstopActive = true;
-      notifyClients(); 
     }
     
     // Safety: Force everything off immediately
@@ -201,6 +189,7 @@ void loop() {
     if (isEstopActive) {
       Serial.println("Emergency Stop Released - Returning to MANUAL mode");
       isEstopActive = false;
+      // System remains in MANUAL mode for safety until manually started
     }
   }
 
@@ -210,22 +199,29 @@ void loop() {
   updateButtonState(&inputC, INPUT_C_PIN);
   updateButtonState(&inputD, INPUT_D_PIN);
 
-  // Debug Output for Endstops
+  // Debug Output for Endstops (regardless of mode)
+  // Endstops are Normally Closed (NC):
+  // - Closed (Normal/Safe/Not at end) = Connected to GND = LOW
+  // - Open (Triggered/At end/Broken wire) = Pulled up = HIGH
   bool currentEndStopIn = digitalRead(ENDSTOP_IN_PIN);
   bool currentEndStopOut = digitalRead(ENDSTOP_OUT_PIN);
 
   if (currentEndStopIn != lastEndStopIn) {
-    if (currentEndStopIn == HIGH) Serial.println("DEBUG: End Stop IN Triggered!");
-    else Serial.println("DEBUG: End Stop IN Released.");
+    if (currentEndStopIn == HIGH) {
+      Serial.println("DEBUG: End Stop IN Triggered! (Mode: " + String(currentMode == MODE_MANUAL ? "MANUAL" : "AUTO") + ")");
+    } else {
+      Serial.println("DEBUG: End Stop IN Released.");
+    }
     lastEndStopIn = currentEndStopIn;
-    notifyClients();
   }
 
   if (currentEndStopOut != lastEndStopOut) {
-    if (currentEndStopOut == HIGH) Serial.println("DEBUG: End Stop OUT Triggered!");
-    else Serial.println("DEBUG: End Stop OUT Released.");
+    if (currentEndStopOut == HIGH) {
+      Serial.println("DEBUG: End Stop OUT Triggered! (Mode: " + String(currentMode == MODE_MANUAL ? "MANUAL" : "AUTO") + ")");
+    } else {
+      Serial.println("DEBUG: End Stop OUT Released.");
+    }
     lastEndStopOut = currentEndStopOut;
-    notifyClients();
   }
   
   // Check for mode change requests
@@ -233,28 +229,27 @@ void loop() {
   if (inputC.pressed) {
     if (currentMode != MODE_AUTO_LOOP) {
       currentMode = MODE_AUTO_LOOP;
-      // Resume from last direction, or default to OUT if unknown
-      if (cycleDirection == CYCLE_STOPPED) {
-        cycleDirection = CYCLE_OUT;
-      }
+      cycleDirection = CYCLE_OUT;  // Start by extending
       lastCycleTime = millis();
       cycleStartTime = millis();  // Start timeout timer
-      Serial.println("Switched to AUTO LOOP mode");
+      Serial.println("Switched to AUTO LOOP mode - starting with OUT cycle");
     }
     inputC.pressed = false;
   }
   
-  // Stop AUTO loop
+  // Stop AUTO loop (Input D OR Input A OR Input B)
   if (inputD.pressed || ((currentMode == MODE_AUTO_LOOP) && (inputA.pressed || inputB.pressed))) {
     if (currentMode == MODE_AUTO_LOOP) {
       currentMode = MODE_MANUAL;
-      // Do NOT reset cycleDirection -> Keep it for resuming later
-      // cycleDirection = CYCLE_STOPPED; 
+      cycleDirection = CYCLE_STOPPED;
       digitalWrite(GPO1_PIN, LOW);
       digitalWrite(GPO2_PIN, LOW);
-      Serial.println("Switched to MANUAL mode");
+      if (inputD.pressed) Serial.println("Switched to MANUAL mode (via STOP) - all outputs OFF");
+      else Serial.println("Switched to MANUAL mode (via MANUAL INPUT) - all outputs OFF");
     }
     inputD.pressed = false;
+    // Note: Don't clear inputA/B pressed flags here, let them be handled by handleManualMode if needed
+    // But since we just switched to manual, handleManualMode will run next
   }
   
   // Execute based on current mode
@@ -285,7 +280,6 @@ void updateButtonState(ButtonState* btn, int pin) {
       if (btn->currentState == LOW) {
         btn->pressed = true;
         btn->lastPressTime = millis(); // Record timestamp for UI
-        notifyClients();
       } else {
         // Clear pressed flag when button is released
         btn->pressed = false;
@@ -300,19 +294,7 @@ void updateButtonState(ButtonState* btn, int pin) {
 void handleManualMode() {
   bool inputAPressed = (digitalRead(INPUT_A_PIN) == LOW);
   bool inputBPressed = (digitalRead(INPUT_B_PIN) == LOW);
-
-  // Read endstops to update direction logic even in manual mode
-  bool endStopIn = (digitalRead(ENDSTOP_IN_PIN) == HIGH);
-  bool endStopOut = (digitalRead(ENDSTOP_OUT_PIN) == HIGH);
-
-  // Update direction based on End Stops (Top Priority)
-  // If we hit an end stop in manual mode, the NEXT auto-move must be the opposite way.
-  if (endStopIn) {
-    cycleDirection = CYCLE_OUT;
-  } else if (endStopOut) {
-    cycleDirection = CYCLE_IN;
-  }
-
+  
   // Safety: Prevent simultaneous activation of both outputs
   if (inputAPressed && inputBPressed) {
     // If both buttons pressed, turn off both outputs
@@ -321,31 +303,15 @@ void handleManualMode() {
     return;
   }
   
-  // Input A controls GPO2 (Extend / OUT)
+  // Input A controls GPO1 (extend)
   if (inputAPressed) {
-    digitalWrite(GPO1_PIN, LOW);  // Ensure other output is off
-
-    // Only extend if end stop OUT is NOT triggered
-    if (!endStopOut) {
-       digitalWrite(GPO2_PIN, HIGH);
-       cycleDirection = CYCLE_OUT;
-    } else {
-       // Safety block
-       digitalWrite(GPO2_PIN, LOW);
-    }
-  } 
-  // Input B controls GPO1 (Retract / IN)
-  else if (inputBPressed) {
+    digitalWrite(GPO1_PIN, HIGH);
     digitalWrite(GPO2_PIN, LOW);  // Ensure other output is off
-
-    // Only retract if end stop IN is NOT triggered
-    if (!endStopIn) {
-       digitalWrite(GPO1_PIN, HIGH);
-       cycleDirection = CYCLE_IN;
-    } else {
-       // Safety block
-       digitalWrite(GPO1_PIN, LOW);
-    }
+  } 
+  // Input B controls GPO2 (retract)
+  else if (inputBPressed) {
+    digitalWrite(GPO2_PIN, HIGH);
+    digitalWrite(GPO1_PIN, LOW);  // Ensure other output is off
   } 
   // No input pressed
   else {
@@ -540,115 +506,156 @@ void setupOTA() {
 
 // ========== WEB SERVER SETUP ==========
 void setupWebServer() {
-  // WebSocket
-  ws.onEvent(onWsEvent);
-  server.addHandler(&ws);
-
-  // Static files
-  server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
+  // Serve static files from LittleFS
+  server.serveStatic("/", LittleFS, "/index.html");
+  server.serveStatic("/index.html", LittleFS, "/index.html");
+  server.serveStatic("/settings.html", LittleFS, "/settings.html");
+  server.serveStatic("/style.css", LittleFS, "/style.css");
+  server.serveStatic("/script.js", LittleFS, "/script.js");
   
   // API endpoints
   server.on("/save", HTTP_POST, handleSaveSettings);
-  server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(200, "application/json", getStatusJson());
-  });
+  server.on("/status", handleStatus);
   server.on("/setwifi", HTTP_POST, handleSetWiFi);
   
   // Web OTA Update
-  server.on("/update", HTTP_POST, [](AsyncWebServerRequest *request){
-    bool shouldReboot = !Update.hasError();
-    AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", shouldReboot?"OK":"FAIL");
-    response->addHeader("Connection", "close");
-    request->send(response);
-    if(shouldReboot) ESP.restart();
-  }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final){
-    if(!index){
-      Serial.printf("Update Start: %s\n", filename.c_str());
-      int cmd = (filename == "filesystem") ? U_SPIFFS : U_FLASH;
-      if(!Update.begin(UPDATE_SIZE_UNKNOWN, cmd)) Update.printError(Serial);
-    }
-    if(Update.write(data, len) != len) Update.printError(Serial);
-    if(final){
-      if(Update.end(true)) Serial.printf("Update Success: %uB\n", index+len);
-      else Update.printError(Serial);
+  server.on("/update", HTTP_POST, []() {
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
+    delay(1000);
+    ESP.restart();
+  }, []() {
+    HTTPUpload& upload = server.upload();
+    if (upload.status == UPLOAD_FILE_START) {
+      Serial.printf("Update: %s\n", upload.filename.c_str());
+      int command = U_FLASH;
+      if (upload.name == "filesystem") {
+        command = U_SPIFFS;
+        Serial.println("Target: Filesystem");
+      } else {
+        Serial.println("Target: Firmware");
+      }
+      
+      if (!Update.begin(UPDATE_SIZE_UNKNOWN, command)) {
+        Update.printError(Serial);
+      }
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+        Update.printError(Serial);
+      }
+    } else if (upload.status == UPLOAD_FILE_END) {
+      if (Update.end(true)) {
+        Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+      } else {
+        Update.printError(Serial);
+      }
     }
   });
   
-  // 404
-  server.onNotFound([](AsyncWebServerRequest *request){
-    request->send(404, "text/plain", "Not Found");
+  // 404 handler
+  server.onNotFound([]() {
+    server.send(404, "text/plain", "404: File not found");
   });
-
+  
   server.begin();
-  Serial.println("Async Web server started");
+  Serial.println("Web server started");
+  Serial.println("Web files served from LittleFS filesystem");
 }
 
-void notifyClients() {
-  ws.textAll(getStatusJson());
-}
-
-String getStatusJson() {
-  DynamicJsonDocument doc(1024);
-  
-  doc["estopActive"] = isEstopActive;
-  doc["mode"] = (currentMode == MODE_MANUAL ? "MANUAL" : "AUTO");
-  
-  if (cycleDirection == CYCLE_IN) doc["cycleDirection"] = "IN";
-  else if (cycleDirection == CYCLE_OUT) doc["cycleDirection"] = "OUT";
-  else doc["cycleDirection"] = "STOPPED";
-  
-  doc["gpo1"] = digitalRead(GPO1_PIN);
-  doc["gpo2"] = digitalRead(GPO2_PIN);
-  
-  unsigned long now = millis();
-  // Lower the threshold because we update much faster now
-  doc["inputA"] = (now - inputA.lastPressTime < 1000) || (digitalRead(INPUT_A_PIN) == LOW);
-  doc["inputB"] = (now - inputB.lastPressTime < 1000) || (digitalRead(INPUT_B_PIN) == LOW);
-  doc["inputC"] = (now - inputC.lastPressTime < 1000) || (digitalRead(INPUT_C_PIN) == LOW);
-  doc["inputD"] = (now - inputD.lastPressTime < 1000) || (digitalRead(INPUT_D_PIN) == LOW);
-  
-  doc["endStopIn"] = (digitalRead(ENDSTOP_IN_PIN) == HIGH);
-  doc["endStopOut"] = (digitalRead(ENDSTOP_OUT_PIN) == HIGH);
-  
-  doc["cycleTimeout"] = cycleTimeout;
-  doc["timeoutEnabled"] = timeoutEnabled;
-  doc["wifiConnected"] = (WiFi.status() == WL_CONNECTED);
-  doc["wifiSSID"] = (WiFi.status() == WL_CONNECTED ? wifiSSID : "AP Mode");
-  doc["ipAddress"] = (WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : WiFi.softAPIP().toString());
-  
-  String json;
-  serializeJson(doc, json);
-  return json;
-}
-
-void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
-  if(type == WS_EVT_CONNECT){
-    client->text(getStatusJson());
-  }
-}
-
-// ========== ASYNC HANDLERS ==========
-void handleSaveSettings(AsyncWebServerRequest *request) {
-  if (request->hasArg("timeout")) {
-    unsigned long newTimeout = request->arg("timeout").toInt();
+// ========== WEB SERVER HANDLERS ==========
+void handleSaveSettings() {
+  if (server.hasArg("timeout")) {
+    unsigned long newTimeout = server.arg("timeout").toInt();
+    // Validate timeout value (1 second to 5 minutes)
     if (newTimeout >= 1000 && newTimeout <= 300000) {
       cycleTimeout = newTimeout;
     } else {
-      request->send(400, "text/html", "Invalid Timeout");
+      // Invalid value, send error response
+      String html = "<!DOCTYPE html><html><head>";
+      html += "<meta http-equiv='refresh' content='3;url=/settings'>";
+      html += "<style>body { font-family: Arial; text-align: center; padding: 50px; }</style>";
+      html += "</head><body>";
+      html += "<h1>❌ Invalid Timeout Value</h1>";
+      html += "<p>Timeout must be between 1000ms and 300000ms</p>";
+      html += "<p>Redirecting back to settings...</p>";
+      html += "</body></html>";
+      server.send(400, "text/html", html);
       return;
     }
   }
   
-  timeoutEnabled = request->hasArg("timeoutEnabled");
+  timeoutEnabled = server.hasArg("timeoutEnabled");
+  
   saveSettings();
-  request->send(200, "text/html", "<h1>Settings Saved!</h1><meta http-equiv='refresh' content='2;url=/'>");
+  
+  String html = "<!DOCTYPE html><html><head>";
+  html += "<meta http-equiv='refresh' content='2;url=/'>";
+  html += "<style>body { font-family: Arial; text-align: center; padding: 50px; }</style>";
+  html += "</head><body>";
+  html += "<h1>✅ Settings Saved!</h1>";
+  html += "<p>Redirecting to home page...</p>";
+  html += "</body></html>";
+  
+  server.send(200, "text/html", html);
 }
 
-void handleSetWiFi(AsyncWebServerRequest *request) {
-  if (request->hasArg("ssid")) wifiSSID = request->arg("ssid");
-  if (request->hasArg("password")) wifiPassword = request->arg("password");
+void handleSetWiFi() {
+  if (server.hasArg("ssid")) {
+    wifiSSID = server.arg("ssid");
+  }
+  if (server.hasArg("password")) {
+    wifiPassword = server.arg("password");
+  }
+  
   saveSettings();
-  request->send(200, "text/html", "<h1>WiFi Saved! Device restarting...</h1>");
+  
+  String html = "<!DOCTYPE html><html><head>";
+  html += "<style>body { font-family: Arial; text-align: center; padding: 50px; }</style>";
+  html += "</head><body>";
+  html += "<h1>✅ WiFi Settings Saved!</h1>";
+  html += "<p>Device will restart momentarily...</p>";
+  html += "<p>Please reconnect to your WiFi network and access the device at:</p>";
+  html += "<p><strong>http://groutpump.local</strong></p>";
+  html += "</body></html>";
+  
+  server.send(200, "text/html", html);
+  
+  // Small delay to ensure response is sent before restart
   delay(1000);
   ESP.restart();
+}
+
+void handleStatus() {
+  String json = "{";
+  json += "\"estopActive\":" + String(isEstopActive ? "true" : "false") + ",";
+  json += "\"mode\":\"" + String(currentMode == MODE_MANUAL ? "MANUAL" : "AUTO") + "\",";
+  json += "\"cycleDirection\":\"";
+  if (cycleDirection == CYCLE_IN) json += "IN";
+  else if (cycleDirection == CYCLE_OUT) json += "OUT";
+  else json += "STOPPED";
+  json += "\",";
+  json += "\"gpo1\":" + String(digitalRead(GPO1_PIN)) + ",";
+  json += "\"gpo2\":" + String(digitalRead(GPO2_PIN)) + ",";
+  // Use lastPressTime to show "Active" state if pressed within last 2.5 seconds (UI update rate is ~2s)
+  unsigned long now = millis();
+  bool visInputA = (now - inputA.lastPressTime < 2500) || (digitalRead(INPUT_A_PIN) == LOW);
+  bool visInputB = (now - inputB.lastPressTime < 2500) || (digitalRead(INPUT_B_PIN) == LOW);
+  bool visInputC = (now - inputC.lastPressTime < 2500) || (digitalRead(INPUT_C_PIN) == LOW);
+  bool visInputD = (now - inputD.lastPressTime < 2500) || (digitalRead(INPUT_D_PIN) == LOW);
+  
+  json += "\"inputA\":" + String(visInputA ? "true" : "false") + ",";
+  json += "\"inputB\":" + String(visInputB ? "true" : "false") + ",";
+  json += "\"inputC\":" + String(visInputC ? "true" : "false") + ",";
+  json += "\"inputD\":" + String(visInputD ? "true" : "false") + ",";
+  // Endstops match Normally Closed logic: HIGH means Triggered (Open circuit)
+  json += "\"endStopIn\":" + String(digitalRead(ENDSTOP_IN_PIN) == HIGH ? "true" : "false") + ",";
+  json += "\"endStopOut\":" + String(digitalRead(ENDSTOP_OUT_PIN) == HIGH ? "true" : "false") + ",";
+  json += "\"cycleTimeout\":" + String(cycleTimeout) + ",";
+  json += "\"timeoutEnabled\":" + String(timeoutEnabled ? "true" : "false") + ",";
+  json += "\"wifiConnected\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
+  json += "\"wifiSSID\":\"" + (WiFi.status() == WL_CONNECTED ? wifiSSID : "AP Mode") + "\",";
+  json += "\"ipAddress\":\"" + (WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : WiFi.softAPIP().toString()) + "\"";
+  json += "}";
+  
+  server.send(200, "application/json", json);
 }

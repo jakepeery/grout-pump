@@ -18,6 +18,25 @@
         <div class="status manual" id="status-box">
             <h2>Current Status</h2>
             <p><strong>Mode:</strong> <span id="mode">Loading...</span></p>
+
+            <!-- Pump Animation -->
+            <div class="pump-container">
+                <div class="cylinder-housing">
+                    <div class="piston-head">
+                        <div class="piston-rod"></div>
+                    </div>
+                </div>
+                <!-- Hopper / Intake Visual -->
+                <div class="hopper">
+                    <div class="hopper-grout"></div>
+                </div>
+                <!-- Outlet / Nozzle Visual -->
+                <div class="nozzle">
+                    <div class="grout-flow-stream"></div>
+                </div>
+                <div class="status-overlay" id="anim-status-text">STOPPED</div>
+            </div>
+
             <div id="cycle-direction-container" style="display: none;">
                 <p><strong>Cycle Direction:</strong> <span id="cycle-direction">-</span></p>
             </div>

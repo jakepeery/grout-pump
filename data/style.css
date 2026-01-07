@@ -272,3 +272,127 @@ input[type='submit']:active {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     font-size: 0.9em;
 }
+
+/* Pump Animation Styles */
+.pump-container {
+    position: relative;
+    width: 100%;
+    max-width: 500px;
+    height: 140px;
+    margin: 20px auto;
+    background: #f0f0f0;
+    border: 2px solid #ccc;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.cylinder-housing {
+    position: absolute;
+    top: 40px;
+    left: 20px;
+    width: 300px;
+    height: 60px;
+    background: #cfd8dc;
+    border: 4px solid #546e7a;
+    border-radius: 4px;
+    z-index: 2;
+    overflow: hidden; /* Contains the piston and grout inside */
+}
+
+/* Hopper (Inlet) */
+.hopper {
+    position: absolute;
+    top: 10px;
+    left: 20px;
+    width: 60px;
+    height: 30px;
+    background: #bcaaa4;
+    border-radius: 0 0 10px 10px;
+    z-index: 1;
+}
+
+/* Piston Head */
+.piston-head {
+    position: absolute;
+    top: 2px;
+    left: 10px; /* Default Retracted Position */
+    width: 15px;
+    height: 48px;
+    background: #37474f; /* Dark Grey Piston */
+    border-radius: 2px;
+    z-index: 5;
+    transition: left 3s linear; /* Smooth stroke */
+}
+
+/* Piston Rod (Connects to left side) - Inside Head */
+.piston-rod {
+    position: absolute;
+    top: 18px; /* Centered in 48px head ((48-12)/2 = 18) */
+    left: -310px; /* Extends off screen to the left */
+    width: 310px; 
+    height: 12px;
+    background: #90a4ae; /* Steel rod */
+    z-index: 4;
+}
+
+/* Grout in the Chamber - Hidden/Removed */
+.grout-chamber {
+    display: none;
+}
+
+/* Nozzle / Outlet */
+.nozzle {
+    position: absolute;
+    top: 55px;
+    left: 324px;
+    width: 40px;
+    height: 30px;
+    background: #546e7a;
+    z-index: 2;
+}
+
+/* Grout Stream (Exiting Nozzle) */
+.grout-flow-stream {
+    position: absolute;
+    top: 60px;
+    left: 364px;
+    width: 0;
+    height: 20px;
+    background: #795548;
+    border-radius: 0 5px 5px 0;
+    transition: width 0.2s;
+    opacity: 0;
+}
+
+/* Status Text Overlay */
+.status-overlay {
+    position: absolute;
+    bottom: 5px;
+    right: 10px;
+    font-size: 12px;
+    color: #666;
+    font-weight: bold;
+}
+
+/* Animation States */
+/* Retracting (Sucking IN): Piston Moves LEFT. */
+.pump-container.anim-retract .piston-head {
+    left: 10px; /* Move Left */
+}
+
+/* Extending (Pushing OUT): Piston Moves RIGHT. */
+.pump-container.anim-extend .piston-head {
+    left: 280px; /* Move Right */
+}
+
+/* Pushing Stream Animation */
+.pump-container.anim-extend .grout-flow-stream {
+    width: 100px;
+    opacity: 1;
+    animation: flowPulse 0.5s infinite alternate;
+}
+
+@keyframes flowPulse {
+    from { opacity: 0.8; width: 95px; }
+    to { opacity: 1; width: 105px; }
+}

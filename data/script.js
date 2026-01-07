@@ -1,53 +1,130 @@
-// Auto-refresh functionality for the home page
-let autoRefreshEnabled = false;
-let refreshInterval = null;
+var gateway = `ws://${window.location.hostname}/ws`;
+var websocket;
 
-function toggleAutoRefresh() {
-    autoRefreshEnabled = !autoRefreshEnabled;
-    const btn = document.getElementById('auto-refresh-btn');
+window.addEventListener('load', onLoad);
+
+function onLoad(event) {
+    initWebSocket();
+    setupFormValidation();
+}
+
+function initWebSocket() {
+    console.log('Trying to open a WebSocket connection...');
+    websocket = new WebSocket(gateway);
+    websocket.onopen = onOpen;
+    websocket.onclose = onClose;
+    websocket.onmessage = onMessage;
+}
+
+function onOpen(event) {
+    console.log('Connection opened');
+    const header = document.querySelector('h1');
+    if(header) {
+        if(!header.dataset.originalText) header.dataset.originalText = header.textContent;
+        header.textContent = header.dataset.originalText + ' (Connected 🟢)';
+    }
+}
+
+function onClose(event) {
+    console.log('Connection closed');
+    const header = document.querySelector('h1');
+    if(header && header.dataset.originalText) {
+        header.textContent = header.dataset.originalText + ' (Disconnected 🔴)';
+    }
+    setTimeout(initWebSocket, 2000);
+}
+
+function onMessage(event) {
+    var data = JSON.parse(event.data);
+    updateUI(data);
+}
+
+function updateUI(data) {
+    // Handle E-Stop State
+    const estopAlert = document.getElementById('estop-alert');
+    const estopStatus = document.getElementById('estop-status');
+    const pumpContainer = document.querySelector('.pump-container');
+    const animStatus = document.getElementById('anim-status-text');
     
-    if (autoRefreshEnabled) {
-        btn.textContent = '🔄 Auto-Refresh: ON';
-        btn.style.background = 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)';
-        startAutoRefresh();
-    } else {
-        btn.textContent = '🔄 Auto-Refresh: OFF';
-        btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-        stopAutoRefresh();
-    }
-}
-
-function startAutoRefresh() {
-    if (refreshInterval) {
-        clearInterval(refreshInterval);
-    }
-    refreshInterval = setInterval(updateStatus, 2000); // Update every 2 seconds
-}
-
-function stopAutoRefresh() {
-    if (refreshInterval) {
-        clearInterval(refreshInterval);
-        refreshInterval = null;
-    }
-}
-
-async function updateStatus() {
-    try {
-        const response = await fetch('/status');
-        const data = await response.json();
+    // Pump Animation Logic
+    if (pumpContainer && animStatus) {
+        const pistonHead = document.querySelector('.piston-head');
+        let direction = "";
         
-        // Handle E-Stop State
-        const estopAlert = document.getElementById('estop-alert');
-        const estopStatus = document.getElementById('estop-status');
-        
-        if (data.estopActive) {
-            if (estopAlert) estopAlert.style.display = 'block';
-            if (estopStatus) {
-                estopStatus.textContent = 'ACTIVATED';
-                estopStatus.style.color = 'red';
-                estopStatus.style.fontWeight = 'bold';
+        // Constants for animation
+        const MIN_POS = 10;
+        const MAX_POS = 280;
+        const FULL_TRAVEL = MAX_POS - MIN_POS;
+        const FULL_TIME = 3.0; // Seconds
+
+        // Determine Direction based on GPO states
+        // GPO1 = IN (Retract to Left) based on user preference
+        if (data.gpo1 === 1) { 
+            direction = "RETRACTING (IN)";
+            animStatus.style.color = '#2196f3'; // Blue
+            
+            // Only trigger if not already retrecting
+            if (!pumpContainer.classList.contains('anim-retract')) {
+                 // Calculate duration based on remaining distance to MIN_POS (Left)
+                const currentLeft = parseFloat(getComputedStyle(pistonHead).left) || MIN_POS;
+                const distance = Math.abs(currentLeft - MIN_POS);
+                const duration = (distance / FULL_TRAVEL) * FULL_TIME;
+
+                pistonHead.style.transition = `left ${duration}s linear`;
+                pistonHead.style.left = ''; // Clear inline freeze
+                
+                pumpContainer.classList.remove('anim-extend');
+                pumpContainer.classList.add('anim-retract');
+                console.log("Pump State: RETRACTING (IN)");
+            }
+        } else if (data.gpo2 === 1) { // GPO2 = OUT (Extend to Right)
+            direction = "EXTENDING (OUT)";
+            animStatus.style.color = '#e91e63'; // Red/Pink
+            
+            if (!pumpContainer.classList.contains('anim-extend')) {
+                // Calculate duration based on remaining distance to MAX_POS (Right)
+                const currentLeft = parseFloat(getComputedStyle(pistonHead).left) || MIN_POS;
+                const distance = Math.abs(MAX_POS - currentLeft);
+                const duration = (distance / FULL_TRAVEL) * FULL_TIME;
+                
+                // Set dynamic transition and target
+                pistonHead.style.transition = `left ${duration}s linear`;
+                pistonHead.style.left = ''; // Clear inline left
+                
+                pumpContainer.classList.remove('anim-retract');
+                pumpContainer.classList.add('anim-extend');
+                console.log("Pump State: EXTENDING (OUT)");
             }
         } else {
+            // STOPPED
+            direction = "STOPPED";
+            animStatus.style.color = '#666';
+            
+            // If currently animating, freeze it
+            if (pumpContainer.classList.contains('anim-extend') || pumpContainer.classList.contains('anim-retract')) {
+                const computedStyle = window.getComputedStyle(pistonHead);
+                const currentLeft = computedStyle.getPropertyValue('left');
+                
+                // Freeze
+                pistonHead.style.transition = 'none';
+                pistonHead.style.left = currentLeft;
+                
+                pumpContainer.classList.remove('anim-extend', 'anim-retract');
+                console.log("Pump State: STOPPED at " + currentLeft);
+            }
+        }
+        
+        animStatus.textContent = direction;
+    }
+
+    if (data.estopActive) {
+        if (estopAlert) estopAlert.style.display = 'block';
+        if (estopStatus) {
+            estopStatus.textContent = 'ACTIVATED';
+            estopStatus.style.color = 'red';
+            estopStatus.style.fontWeight = 'bold';
+        }
+    } else {
             if (estopAlert) estopAlert.style.display = 'none';
             if (estopStatus) {
                 estopStatus.textContent = 'OK';
@@ -105,9 +182,24 @@ async function updateStatus() {
         if (ipAddress) {
             ipAddress.innerHTML = '<strong>IP Address:</strong> ' + data.ipAddress;
         }
+}
+
+function setupFormValidation() {
+    const timeoutInput = document.querySelector('input[name="timeout"]');
+    if (timeoutInput) {
+        timeoutInput.addEventListener('input', function() {
+            validateTimeout(this);
+        });
         
-    } catch (error) {
-        console.error('Failed to update status:', error);
+        const form = timeoutInput.closest('form');
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                if (!validateTimeout(timeoutInput)) {
+                    e.preventDefault();
+                    alert('Please enter a valid timeout value between 1000 and 300000 ms');
+                }
+            });
+        }
     }
 }
 
@@ -171,42 +263,4 @@ function clearValidationMessage(input) {
     }
 }
 
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', function() {
-    // Add event listener for timeout validation
-    const timeoutInput = document.querySelector('input[name="timeout"]');
-    if (timeoutInput) {
-        timeoutInput.addEventListener('input', function() {
-            validateTimeout(this);
-        });
-        
-        // Validate on form submit
-        const form = timeoutInput.closest('form');
-        if (form) {
-            form.addEventListener('submit', function(e) {
-                if (!validateTimeout(timeoutInput)) {
-                    e.preventDefault();
-                    alert('Please enter a valid timeout value between 1000 and 300000 ms');
-                }
-            });
-        }
-    }
-    
-    // Add auto-refresh button if on home page
-    if (document.getElementById('mode')) {
-        const navButtons = document.querySelector('.nav-buttons');
-        if (navButtons) {
-            const refreshBtn = document.createElement('button');
-            refreshBtn.id = 'auto-refresh-btn';
-            refreshBtn.className = 'btn';
-            refreshBtn.textContent = '🔄 Auto-Refresh: OFF';
-            refreshBtn.onclick = toggleAutoRefresh;
-            navButtons.insertBefore(refreshBtn, navButtons.firstChild);
-        }
-    }
-});
-
-// Clean up on page unload
-window.addEventListener('beforeunload', function() {
-    stopAutoRefresh();
-});
+// Initialization handled by window.load and setupFormValidation in main script
