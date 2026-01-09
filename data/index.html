@@ -55,6 +55,25 @@
             <p><strong>E-Stop [GPIO 27]:</strong> <span id="estop-status">Loading...</span></p>
         </div>
 
+        <div class="status stats" id="stats-box">
+            <h2>Cycle Statistics (Auto Mode)</h2>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <span class="stat-label">Last Cycle</span>
+                    <span class="stat-value" id="last-cycle">--</span>
+                    <span class="stat-unit">ms</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Average (Floating)</span>
+                    <span class="stat-value" id="avg-cycle">--</span>
+                    <span class="stat-unit">ms</span>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="cycleChart"></canvas>
+            </div>
+        </div>
+
         <div class="status inputs" id="inputs-box">
             <h2>Wireless Inputs</h2>
             <p id="input-a">

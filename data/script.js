@@ -46,6 +46,17 @@ function updateUI(data) {
     const pumpContainer = document.querySelector('.pump-container');
     const animStatus = document.getElementById('anim-status-text');
     
+    // Update Stats
+    const lastCycleEl = document.getElementById('last-cycle');
+    const avgCycleEl = document.getElementById('avg-cycle');
+    if (lastCycleEl) lastCycleEl.textContent = data.lastDuration > 0 ? data.lastDuration : '--';
+    if (avgCycleEl) avgCycleEl.textContent = data.avgDuration > 0 ? data.avgDuration : '--';
+
+    // Draw Chart if history exists
+    if (data.history && Array.isArray(data.history)) {
+        drawChart(data.history);
+    }
+
     // Pump Animation Logic
     if (pumpContainer && animStatus) {
         const pistonHead = document.querySelector('.piston-head');
@@ -55,7 +66,16 @@ function updateUI(data) {
         const MIN_POS = 10;
         const MAX_POS = 280;
         const FULL_TRAVEL = MAX_POS - MIN_POS;
-        const FULL_TIME = 3.0; // Seconds
+        
+        // Determine Animation Duration (Speed)
+        // Use average duration to set REALISTIC speed if available logic
+        // If data.avgDuration is valid (>500ms), use it. Subtract delay? 
+        // Logic: avgDuration is "Stroke Time". 
+        // If avgDuration is 5000ms, then FULL_TIME should be 5.0.
+        let FULL_TIME = 3.0; // Default fallback
+        if (data.avgDuration && data.avgDuration > 500) {
+            FULL_TIME = data.avgDuration / 1000.0;
+        }
 
         // Determine Direction based on GPO states
         // GPO1 = IN (Retract to Left) based on user preference
@@ -261,6 +281,79 @@ function clearValidationMessage(input) {
     if (msgElement && msgElement.classList.contains('validation-message')) {
         msgElement.remove();
     }
+}
+
+// Simple Chart Drawing Function (No external libraries)
+function drawChart(history) {
+    const canvas = document.getElementById('cycleChart');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width = canvas.parentElement.clientWidth;
+    const height = canvas.height = canvas.parentElement.clientHeight;
+    
+    // Clear
+    ctx.clearRect(0, 0, width, height);
+    
+    if (history.length < 2) {
+        ctx.fillStyle = "#999";
+        ctx.textAlign = "center";
+        ctx.fillText("Need at least 2 cycles for graph...", width/2, height/2);
+        return;
+    }
+
+    // Determine scale
+    let minVal = Math.min(...history);
+    let maxVal = Math.max(...history);
+    
+    // Add padding to scale (10%)
+    const range = maxVal - minVal;
+    if (range === 0) {
+        minVal -= 100;
+        maxVal += 100;
+    } else {
+        minVal -= range * 0.1;
+        maxVal += range * 0.1;
+    }
+    if (minVal < 0) minVal = 0;
+
+    const plotRange = maxVal - minVal;
+    
+    // Draw Background Grid
+    ctx.strokeStyle = "#eee";
+    ctx.beginPath();
+    ctx.moveTo(0, height/2);
+    ctx.lineTo(width, height/2);
+    ctx.stroke();
+
+    // Draw Line
+    ctx.strokeStyle = "#00bcd4";
+    ctx.lineWidth = 3;
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    
+    const xStep = width / (history.length - 1);
+    
+    history.forEach((val, index) => {
+        const x = index * xStep;
+        // Invert Y (Canvas 0 is top)
+        const y = height - ((val - minVal) / plotRange) * height;
+        
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    
+    // Draw Points
+    ctx.fillStyle = "#00838f";
+    history.forEach((val, index) => {
+        const x = index * xStep;
+        const y = height - ((val - minVal) / plotRange) * height;
+        
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fill();
+    });
 }
 
 // Initialization handled by window.load and setupFormValidation in main script

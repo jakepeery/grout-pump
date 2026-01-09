@@ -38,7 +38,7 @@ const int ESTOP_PIN = 27;        // Emergency Stop (Normally Closed Switch) -> O
 const unsigned long DEBOUNCE_DELAY = 50;  // Debounce time in milliseconds
 const unsigned long CYCLE_DELAY = 500;    // Delay between cycle direction changes
 const unsigned long DEFAULT_CYCLE_TIMEOUT = 30000;  // Default 30 seconds timeout
-const unsigned long STATUS_UPDATE_INTERVAL = 100; // WebSocket broadcast interval (ms)
+const unsigned long STATUS_UPDATE_INTERVAL = 1000; // WebSocket broadcast interval (ms)
 
 // ========== GLOBAL OBJECTS ==========
 AsyncWebServer server(80);
@@ -91,6 +91,27 @@ bool lastEndStopOut = HIGH;
 
 // Emergency Stop State
 bool isEstopActive = false;
+
+// Cycle Statistics
+unsigned long cycleDurations[20];
+int cycleIndex = 0;
+int cycleCount = 0;
+unsigned long lastDuration = 0;
+unsigned long avgDuration = 0;
+
+void updateStats(unsigned long duration) {
+  // Filter out invalid durations (e.g. initial boot noise)
+  if (duration < 100) return;
+
+  cycleDurations[cycleIndex] = duration;
+  cycleIndex = (cycleIndex + 1) % 20;
+  if (cycleCount < 20) cycleCount++;
+  
+  unsigned long sum = 0;
+  for (int i=0; i<cycleCount; i++) sum += cycleDurations[i];
+  avgDuration = sum / cycleCount;
+  lastDuration = duration;
+}
 
 
 // ========== FORWARD DECLARATIONS ==========
@@ -168,24 +189,20 @@ void setup() {
 
 // ========== MAIN LOOP ==========
 void loop() {
+  bool stateChanged = false;
+
   // Handle OTA updates
   ArduinoOTA.handle();
   
   // WebSocket cleanup
   ws.cleanupClients();
   
-  // Broadcast status via WebSocket
-  if (millis() - lastStatusUpdate > STATUS_UPDATE_INTERVAL) {
-    notifyClients();
-    lastStatusUpdate = millis();
-  }
-  
   // Check Emergency Stop (Normal Open logic for NC switch: HIGH = Open/Triggered)
   if (digitalRead(ESTOP_PIN) == HIGH) {
     if (!isEstopActive) {
       Serial.println("!!! EMERGENCY STOP ACTIVATED !!!");
       isEstopActive = true;
-      notifyClients(); 
+      stateChanged = true;
     }
     
     // Safety: Force everything off immediately
@@ -194,6 +211,9 @@ void loop() {
     currentMode = MODE_MANUAL;
     cycleDirection = CYCLE_STOPPED;
     
+    // Immediately notify on ESTOP
+    if (stateChanged) notifyClients();
+
     // Skip remaining logic
     return;
   } else {
@@ -201,6 +221,7 @@ void loop() {
     if (isEstopActive) {
       Serial.println("Emergency Stop Released - Returning to MANUAL mode");
       isEstopActive = false;
+      stateChanged = true;
     }
   }
 
@@ -218,14 +239,14 @@ void loop() {
     if (currentEndStopIn == HIGH) Serial.println("DEBUG: End Stop IN Triggered!");
     else Serial.println("DEBUG: End Stop IN Released.");
     lastEndStopIn = currentEndStopIn;
-    notifyClients();
+    stateChanged = true;
   }
 
   if (currentEndStopOut != lastEndStopOut) {
     if (currentEndStopOut == HIGH) Serial.println("DEBUG: End Stop OUT Triggered!");
     else Serial.println("DEBUG: End Stop OUT Released.");
     lastEndStopOut = currentEndStopOut;
-    notifyClients();
+    stateChanged = true;
   }
   
   // Check for mode change requests
@@ -240,6 +261,7 @@ void loop() {
       lastCycleTime = millis();
       cycleStartTime = millis();  // Start timeout timer
       Serial.println("Switched to AUTO LOOP mode");
+      stateChanged = true;
     }
     inputC.pressed = false;
   }
@@ -249,19 +271,35 @@ void loop() {
     if (currentMode == MODE_AUTO_LOOP) {
       currentMode = MODE_MANUAL;
       // Do NOT reset cycleDirection -> Keep it for resuming later
-      // cycleDirection = CYCLE_STOPPED; 
       digitalWrite(GPO1_PIN, LOW);
       digitalWrite(GPO2_PIN, LOW);
       Serial.println("Switched to MANUAL mode");
+      stateChanged = true;
     }
     inputD.pressed = false;
   }
   
+  // Capture Pre-Execution State
+  int prevGPO1 = digitalRead(GPO1_PIN);
+  int prevGPO2 = digitalRead(GPO2_PIN);
+  CycleDirection prevCycleDir = cycleDirection;
+
   // Execute based on current mode
   if (currentMode == MODE_MANUAL) {
     handleManualMode();
   } else {
     handleAutoLoopMode();
+  }
+
+  // Check Post-Execution State for changes
+  if (digitalRead(GPO1_PIN) != prevGPO1) stateChanged = true;
+  if (digitalRead(GPO2_PIN) != prevGPO2) stateChanged = true;
+  if (cycleDirection != prevCycleDir) stateChanged = true;
+
+  // Broadcast status via WebSocket if Changed OR Timer Expired
+  if (stateChanged || (millis() - lastStatusUpdate > STATUS_UPDATE_INTERVAL)) {
+    notifyClients();
+    lastStatusUpdate = millis();
   }
 }
 
@@ -388,11 +426,27 @@ void handleAutoLoopMode() {
   // Check for end stop triggers and reverse direction
   if (cycleDirection == CYCLE_IN && endStopIn) {
     Serial.println("End stop IN reached - switching to OUT cycle");
+    
+    // Calculate cycle time (subtracting the delay at the start of movement)
+    // Note: cycleStartTime was reset when previous end stop was hit.
+    unsigned long rawDuration = millis() - cycleStartTime;
+    // The previous cycle included a CYCLE_DELAY wait before moving.
+    // If we want pure "stroke time", subtract CYCLE_DELAY (if duration > delay).
+    if (rawDuration > CYCLE_DELAY) {
+        updateStats(rawDuration - CYCLE_DELAY);
+    }
+
     cycleDirection = CYCLE_OUT;
     lastCycleTime = millis();
     cycleStartTime = millis();  // Reset timeout timer for new cycle
   } else if (cycleDirection == CYCLE_OUT && endStopOut) {
     Serial.println("End stop OUT reached - switching to IN cycle");
+
+    unsigned long rawDuration = millis() - cycleStartTime;
+    if (rawDuration > CYCLE_DELAY) {
+        updateStats(rawDuration - CYCLE_DELAY);
+    }
+
     cycleDirection = CYCLE_IN;
     lastCycleTime = millis();
     cycleStartTime = millis();  // Reset timeout timer for new cycle
@@ -609,6 +663,19 @@ String getStatusJson() {
   
   doc["endStopIn"] = (digitalRead(ENDSTOP_IN_PIN) == HIGH);
   doc["endStopOut"] = (digitalRead(ENDSTOP_OUT_PIN) == HIGH);
+
+  // Cycle Statistics
+  doc["lastDuration"] = lastDuration;
+  doc["avgDuration"] = avgDuration;
+  
+  JsonArray history = doc.createNestedArray("history");
+  // Output history ordered (Oldest -> Newest) is ideal for graphing
+  if (cycleCount > 0) {
+      int idx = (cycleCount < 20) ? 0 : cycleIndex; // Start at oldest
+      for (int i = 0; i < cycleCount; i++) {
+         history.add(cycleDurations[(idx + i) % 20]);
+      }
+  }
   
   doc["cycleTimeout"] = cycleTimeout;
   doc["timeoutEnabled"] = timeoutEnabled;
